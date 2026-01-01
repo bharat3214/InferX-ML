@@ -103,7 +103,7 @@
 
 .result-value {
     padding: var(--space-8);
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+    background: linear-gradient(135deg, rgba(107, 114, 128, 0.1) 0%, rgba(156, 163, 175, 0.1) 100%);
     border-radius: var(--radius-xl);
     margin-bottom: var(--space-6);
 }
@@ -112,7 +112,7 @@
     display: block;
     font-size: 2.5rem;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    background: linear-gradient(135deg, #9ca3af 0%, #d1d5db 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

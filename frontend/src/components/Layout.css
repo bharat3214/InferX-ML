@@ -6,7 +6,7 @@
 /* Sidebar */
 .sidebar {
     width: 260px;
-    background: rgba(15, 23, 42, 0.95);
+    background: rgba(17, 17, 17, 0.95);
     backdrop-filter: blur(10px);
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
@@ -41,7 +41,7 @@
 .logo-text {
     font-size: 1.25rem;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    background: linear-gradient(135deg, #9ca3af 0%, #d1d5db 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -96,7 +96,7 @@
 }
 
 .nav-item.active {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
     color: white;
 }
 
@@ -131,7 +131,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
     border-radius: var(--radius-full);
     font-weight: 600;
     font-size: 0.875rem;

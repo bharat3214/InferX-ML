@@ -20,7 +20,7 @@
 
 /* Branding Side */
 .login-branding {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
     padding: var(--space-12);
     display: flex;
     align-items: center;
