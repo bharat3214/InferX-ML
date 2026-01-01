@@ -22,3 +22,90 @@ The platform is built entirely on **open-source technologies**, including **Stre
 
 ---
 
+
+
+
+Got it — thanks for clarifying.
+You now have a **hybrid frontend architecture**, which is actually **very solid and realistic**.
+
+I’ll give you a **clear architecture** and **end-to-end flow**, aligned exactly with:
+
+* ✅ **React.js** → main product frontend
+* ✅ **Flask** → backend API
+* ✅ **PostgreSQL** → metadata / user / job tracking
+* ✅ **Streamlit** → ML results & prediction UI
+* ✅ **MinIO** → datasets, models, artifacts
+* ✅ **Pandas-based AutoML (MVP)**
+
+No confusion, no overlap.
+
+---
+
+# 🏗️ System Architecture (React + Flask + Streamlit + MinIO)
+
+## High-Level Architecture
+
+```
+┌────────────────────────────────────────────┐
+│              User Browser                  │
+└───────────────┬───────────────┬────────────┘
+                │               │
+                │               │
+                ▼               ▼
+┌────────────────────────┐  ┌────────────────────────┐
+│     React Frontend     │  │    Streamlit Frontend  │
+│   (Main Application)   │  │   (Prediction & ML UI) │
+│                        │  │                        │
+│ • Login / Dashboard    │  │ • Training progress    │
+│ • Dataset management   │  │ • Predictions          │
+│ • Job history          │  │ • Charts & insights    │
+└───────────────┬────────┘  └───────────────┬────────┘
+                │ REST API                  │ REST / Python
+                ▼                           ▼
+┌────────────────────────────────────────────┐
+│              Flask Backend                 │
+│          (Core Orchestrator API)           │
+│                                            │
+│ • Auth & user management                   │
+│ • Dataset registration                    │
+│ • AutoML workflow control                 │
+│ • Prediction orchestration                │
+└───────────────┬───────────────┬────────────┘
+                │               │
+                │               │
+                ▼               ▼
+┌────────────────────────┐  ┌────────────────────────┐
+│      PostgreSQL        │  │        MinIO            │
+│   (Metadata Store)    │  │  (Object Storage)       │
+│                        │  │                        │
+│ • Users                │  │ • Raw datasets         │
+│ • Experiments          │  │ • Processed data       │
+│ • Job status           │  │ • Trained models       │
+│ • Configs              │  │ • Pipelines            │
+└────────────────────────┘  │ • Metrics & artifacts  │
+                              └────────────────────────┘
+```
+
+
+
+
+# 🔄 Flow Summary
+
+```
+React UI
+   ↓
+Flask API
+   ↓
+MinIO (store data)
+   ↓
+Pandas AutoML
+   ↓
+Model + Artifacts → MinIO
+   ↓
+Streamlit UI
+   ↓
+Predictions in Browser
+```
+
+
+
