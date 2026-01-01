@@ -1,0 +1,242 @@
+.dashboard {
+    max-width: 1200px;
+}
+
+.page-header {
+    margin-bottom: var(--space-8);
+}
+
+.page-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: var(--space-2);
+}
+
+.page-header p {
+    color: var(--color-gray-400);
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+    margin-bottom: var(--space-8);
+}
+
+.stat-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-xl);
+    transition: all 0.2s;
+    text-decoration: none;
+    position: relative;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.stat-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+}
+
+.stat-blue .stat-icon {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.stat-purple .stat-icon {
+    background: rgba(139, 92, 246, 0.2);
+    color: #8b5cf6;
+}
+
+.stat-orange .stat-icon {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.stat-green .stat-icon {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.stat-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--color-gray-100);
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--color-gray-400);
+}
+
+.stat-arrow {
+    position: absolute;
+    right: var(--space-4);
+    top: var(--space-4);
+    color: var(--color-gray-600);
+    opacity: 0;
+    transition: all 0.2s;
+}
+
+.stat-card:hover .stat-arrow {
+    opacity: 1;
+    color: var(--color-gray-400);
+}
+
+/* Sections */
+.section {
+    margin-bottom: var(--space-8);
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+}
+
+.section h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.view-all {
+    font-size: 0.875rem;
+    color: var(--color-primary-light);
+}
+
+/* Actions Grid */
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4);
+}
+
+.action-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-8);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-xl);
+    transition: all 0.3s;
+    text-decoration: none;
+    color: var(--color-gray-100);
+}
+
+.action-card:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--color-primary);
+    transform: translateY(-4px);
+}
+
+.action-card svg {
+    color: var(--color-primary);
+    margin-bottom: var(--space-4);
+}
+
+.action-card h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: var(--space-2);
+}
+
+.action-card p {
+    font-size: 0.875rem;
+    color: var(--color-gray-400);
+}
+
+/* Models List */
+.models-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.model-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4);
+}
+
+.model-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.model-icon {
+    color: var(--color-primary);
+}
+
+.model-info h4 {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.model-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-12);
+}
+
+.empty-icon {
+    color: var(--color-gray-600);
+    margin-bottom: var(--space-4);
+}
+
+.empty-state h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: var(--space-2);
+}
+
+.empty-state p {
+    color: var(--color-gray-400);
+    margin-bottom: var(--space-6);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+
+    .stats-grid,
+    .actions-grid {
+        grid-template-columns: 1fr;
+    }
+}
