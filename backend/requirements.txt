@@ -37,7 +37,7 @@ statsmodels==0.14.0
 
 # Machine Learning - Deep Learning
 tensorflow==2.15.0
-keras==3.0.0
+# keras is included in tensorflow 2.15.0, no separate install needed
 
 # Machine Learning - Explainability
 shap==0.44.0
