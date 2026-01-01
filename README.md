@@ -22,25 +22,6 @@ The platform is built entirely on **open-source technologies**, including **Stre
 
 ---
 
-
-
-
-Got it — thanks for clarifying.
-You now have a **hybrid frontend architecture**, which is actually **very solid and realistic**.
-
-I’ll give you a **clear architecture** and **end-to-end flow**, aligned exactly with:
-
-* ✅ **React.js** → main product frontend
-* ✅ **Flask** → backend API
-* ✅ **PostgreSQL** → metadata / user / job tracking
-* ✅ **Streamlit** → ML results & prediction UI
-* ✅ **MinIO** → datasets, models, artifacts
-* ✅ **Pandas-based AutoML (MVP)**
-
-No confusion, no overlap.
-
----
-
 # 🏗️ System Architecture (React + Flask + Streamlit + MinIO)
 
 ## High-Level Architecture
@@ -84,9 +65,9 @@ No confusion, no overlap.
 │ • Configs              │  │ • Pipelines            │
 └────────────────────────┘  │ • Metrics & artifacts  │
                               └────────────────────────┘
+
+
 ```
-
-
 
 
 # 🔄 Flow Summary
@@ -106,6 +87,7 @@ Streamlit UI
    ↓
 Predictions in Browser
 ```
+
 
 
 
