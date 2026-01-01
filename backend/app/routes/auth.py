@@ -73,9 +73,9 @@ def login():
     if not user.is_active:
         return jsonify({'error': 'Account is deactivated'}), 403
     
-    # Create tokens
-    access_token = create_access_token(identity=user.id)
-    refresh_token = create_refresh_token(identity=user.id)
+    # Create tokens - use string identity for compatibility
+    access_token = create_access_token(identity=str(user.id))
+    refresh_token = create_refresh_token(identity=str(user.id))
     
     return jsonify({
         'access_token': access_token,
@@ -88,7 +88,7 @@ def login():
 @jwt_required(refresh=True)
 def refresh():
     """Refresh access token"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     access_token = create_access_token(identity=current_user_id)
     
     return jsonify({'access_token': access_token}), 200
@@ -98,7 +98,7 @@ def refresh():
 @jwt_required()
 def get_current_user():
     """Get current user info"""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())
     user = User.query.get(current_user_id)
     
     if not user:

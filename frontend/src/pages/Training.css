@@ -180,3 +180,118 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Status Badges */
+.status-badge {
+    display: inline-block;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.status-badge.starting {
+    color: var(--color-warning);
+    background: rgba(255, 179, 0, 0.1);
+}
+
+.status-badge.training {
+    color: var(--color-primary-light);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.status-badge.completed {
+    color: var(--color-success);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.status-badge.failed {
+    color: var(--color-error);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Logs Terminal */
+.logs-terminal {
+    background: #1e1e1e;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-gray-700);
+    overflow: hidden;
+    margin-top: var(--space-4);
+}
+
+.terminal-header {
+    background: #2d2d2d;
+    padding: var(--space-2) var(--space-4);
+    font-size: 0.75rem;
+    color: var(--color-gray-400);
+    border-bottom: 1px solid var(--color-gray-700);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.terminal-content {
+    padding: var(--space-4);
+    font-family: 'Fira Code', 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+    color: #e0e0e0;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin: 0;
+}
+
+/* Success Message */
+.success-message {
+    margin-top: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: var(--radius-lg);
+    text-align: center;
+}
+
+.success-message span {
+    color: var(--color-success);
+    font-weight: 500;
+}
+
+
+
+.success-message .btn-outline {
+    margin-top: var(--space-2);
+}
+
+.result-summary {
+    display: flex;
+    gap: var(--space-6);
+    background: white;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    margin: var(--space-3) 0;
+    box-shadow: var(--shadow-sm);
+}
+
+.result-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.result-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--color-gray-500);
+    font-weight: 600;
+}
+
+.result-value {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--color-gray-900);
+}

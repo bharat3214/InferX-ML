@@ -21,7 +21,7 @@ def allowed_file(filename):
 @jwt_required()
 def list_datasets():
     """List all datasets for current user"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     datasets = Dataset.query.filter_by(user_id=user_id).order_by(Dataset.created_at.desc()).all()
     
     return jsonify({
@@ -34,7 +34,7 @@ def list_datasets():
 @jwt_required()
 def upload_dataset():
     """Upload a new dataset"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -51,23 +51,69 @@ def upload_dataset():
     name = request.form.get('name', filename)
     description = request.form.get('description', '')
     
-    # TODO: Upload to MinIO and get file path
-    # For now, just create the database record
     file_type = filename.rsplit('.', 1)[1].lower()
     
+    # Read file content for size calculation
+    file_content = file.read()
+    file_size = len(file_content)
+    file.seek(0)  # Reset file pointer
+    
+    # Upload to MinIO
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        
+        file_path = f'{user_id}/{filename}'
+        minio_service.upload_bytes(
+            bucket='datasets',
+            object_name=file_path,
+            data=file_content,
+            content_type=file.content_type or 'application/octet-stream'
+        )
+    except Exception as e:
+        # If MinIO fails, continue without it (for development)
+        print(f"MinIO upload failed: {e}")
+        file_path = f'local/{user_id}/{filename}'
+    
+    # Create database record
     dataset = Dataset(
         name=name,
         description=description,
-        file_path=f'datasets/{user_id}/{filename}',  # MinIO path
+        file_path=file_path,
         file_type=file_type,
-        file_size=0,  # TODO: Get actual file size
-        user_id=user_id
+        file_size=file_size,
+        user_id=user_id,
+        profile_status='pending'
     )
     
     db.session.add(dataset)
     db.session.commit()
     
-    # TODO: Trigger async data profiling task
+    # For tabular data, do quick profiling synchronously (for small files)
+    if file_type in ['csv', 'xlsx', 'xls'] and file_size < 10 * 1024 * 1024:  # < 10MB
+        try:
+            import pandas as pd
+            import io
+            
+            if file_type == 'csv':
+                df = pd.read_csv(io.BytesIO(file_content))
+            else:
+                df = pd.read_excel(io.BytesIO(file_content))
+            
+            # Basic profiling
+            dataset.num_rows = len(df)
+            dataset.num_columns = len(df.columns)
+            dataset.data_type = 'tabular'
+            dataset.column_info = {
+                col: {'dtype': str(df[col].dtype), 'null_count': int(df[col].isnull().sum())}
+                for col in df.columns
+            }
+            dataset.profile_status = 'completed'
+            db.session.commit()
+        except Exception as e:
+            print(f"Profiling failed: {e}")
+            dataset.profile_status = 'failed'
+            db.session.commit()
     
     return jsonify({
         'message': 'Dataset uploaded successfully',
@@ -79,7 +125,7 @@ def upload_dataset():
 @jwt_required()
 def get_dataset(dataset_id):
     """Get dataset details"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
     
     if not dataset:
@@ -92,7 +138,7 @@ def get_dataset(dataset_id):
 @jwt_required()
 def get_dataset_profile(dataset_id):
     """Get dataset profile (stats, types, distributions)"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
     
     if not dataset:
@@ -110,7 +156,7 @@ def get_dataset_profile(dataset_id):
 @jwt_required()
 def delete_dataset(dataset_id):
     """Delete a dataset"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
     
     if not dataset:

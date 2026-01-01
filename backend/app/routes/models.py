@@ -13,7 +13,7 @@ models_bp = Blueprint('models', __name__)
 @jwt_required()
 def list_models():
     """List all trained models for current user"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     
     # Get completed experiments (trained models)
     experiments = Experiment.query.filter_by(
@@ -31,7 +31,7 @@ def list_models():
 @jwt_required()
 def get_model(model_id):
     """Get model details"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     
     experiment = Experiment.query.filter_by(id=model_id, user_id=user_id).first()
     if not experiment:
@@ -44,7 +44,7 @@ def get_model(model_id):
 @jwt_required()
 def download_model(model_id):
     """Download model package"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     
     experiment = Experiment.query.filter_by(id=model_id, user_id=user_id).first()
     if not experiment:
@@ -66,7 +66,7 @@ def download_model(model_id):
 @jwt_required()
 def get_model_schema(model_id):
     """Get model UI schema for prediction form generation"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     
     experiment = Experiment.query.filter_by(id=model_id, user_id=user_id).first()
     if not experiment:
@@ -88,7 +88,7 @@ def get_model_schema(model_id):
 @jwt_required()
 def delete_model(model_id):
     """Delete a model"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     
     experiment = Experiment.query.filter_by(id=model_id, user_id=user_id).first()
     if not experiment:

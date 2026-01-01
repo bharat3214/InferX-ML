@@ -12,7 +12,7 @@ predictions_bp = Blueprint('predictions', __name__)
 @jwt_required()
 def predict(model_id):
     """Make a single prediction"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     data = request.get_json()
     
     if not data:
@@ -45,7 +45,7 @@ def predict(model_id):
 @jwt_required()
 def batch_predict(model_id):
     """Make batch predictions from uploaded file"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -70,7 +70,7 @@ def batch_predict(model_id):
 @jwt_required()
 def explain_prediction(model_id):
     """Get explanation for a prediction"""
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     data = request.get_json()
     
     if not data:

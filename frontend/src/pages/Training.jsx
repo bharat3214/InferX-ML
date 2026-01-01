@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -15,6 +15,7 @@ import './Training.css'
 export default function Training() {
     const [searchParams] = useSearchParams()
     const preselectedDataset = searchParams.get('dataset')
+    const navigate = import.meta.env.VITE_NAVIGATE_HOOK ? import.meta.env.VITE_NAVIGATE_HOOK() : null
 
     const [selectedDataset, setSelectedDataset] = useState(preselectedDataset || '')
     const [targetColumn, setTargetColumn] = useState('')
@@ -22,6 +23,7 @@ export default function Training() {
     const [goalDescription, setGoalDescription] = useState('')
     const [isTraining, setIsTraining] = useState(false)
     const [currentJob, setCurrentJob] = useState(null)
+    const logsEndRef = useRef(null)
 
     const { data: datasetsData } = useQuery({
         queryKey: ['datasets'],
@@ -41,6 +43,22 @@ export default function Training() {
         ? Object.keys(profileData.data.column_info)
         : []
 
+    // Polling for status
+    const { data: statusData } = useQuery({
+        queryKey: ['training-status', currentJob?.id],
+        queryFn: () => trainingApi.getStatus(currentJob.id),
+        enabled: !!currentJob,
+        refetchInterval: isTraining ? 2000 : false
+    })
+
+    // Polling for logs
+    const { data: logsData } = useQuery({
+        queryKey: ['training-logs', currentJob?.id],
+        queryFn: () => trainingApi.getLogs(currentJob.id),
+        enabled: !!currentJob,
+        refetchInterval: isTraining ? 2000 : false
+    })
+
     const startTrainingMutation = useMutation({
         mutationFn: (data) => trainingApi.start(data),
         onSuccess: (response) => {
@@ -48,6 +66,11 @@ export default function Training() {
             setIsTraining(true)
         }
     })
+
+    // Check for completion
+    if (isTraining && statusData?.data?.experiment?.status === 'completed') {
+        setIsTraining(false)
+    }
 
     const handleStartTraining = () => {
         if (!selectedDataset || !targetColumn) return
@@ -59,6 +82,20 @@ export default function Training() {
             goal_description: goalDescription
         })
     }
+
+    // Combine all logs
+    const allLogs = logsData?.data?.logs || []
+    const combinedLogs = allLogs.map(job =>
+        `--- ${job.model_name} ---\n${job.logs || ''}`
+    ).join('\n')
+
+    // Auto-scroll to bottom of logs
+    useEffect(() => {
+        if (logsEndRef.current) {
+            logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+        }
+    }, [combinedLogs])
+
 
     return (
         <div className="training-page">
@@ -139,7 +176,7 @@ export default function Training() {
                     <button
                         className="btn btn-primary start-btn"
                         onClick={handleStartTraining}
-                        disabled={!selectedDataset || !targetColumn || isTraining}
+                        disabled={!selectedDataset || !targetColumn || (isTraining && !statusData?.data?.experiment?.status === 'completed')}
                     >
                         {isTraining ? (
                             <>
@@ -149,46 +186,75 @@ export default function Training() {
                         ) : (
                             <>
                                 <Play size={18} />
-                                Start Training
+                                {statusData?.data?.experiment?.status === 'completed' ? 'Start New Training' : 'Start Training'}
                             </>
                         )}
                     </button>
+
+                    {statusData?.data?.experiment?.status === 'completed' && (
+                        <div className="success-message">
+                            <CheckCircle size={24} className="text-success" />
+                            <h3>Training Success!</h3>
+
+                            {statusData.data.experiment.best_model_name && (
+                                <div className="result-summary">
+                                    <div className="result-item">
+                                        <span className="result-label">🏆 Best Model</span>
+                                        <span className="result-value">{statusData.data.experiment.best_model_name}</span>
+                                    </div>
+                                    <div className="result-item">
+                                        <span className="result-label">📊 Score</span>
+                                        <span className="result-value">
+                                            {(statusData.data.experiment.best_score * 100).toFixed(2)}%
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            <a href="/models" className="btn btn-sm btn-outline">View Models</a>
+                        </div>
+                    )}
                 </div>
 
                 {/* Training Progress / Info Panel */}
                 <div className="info-panel">
-                    {isTraining && currentJob ? (
+                    {currentJob ? (
                         <div className="progress-card card">
                             <div className="progress-header">
                                 <Cpu size={24} className="text-primary" />
                                 <div>
                                     <h3>{currentJob.name}</h3>
-                                    <p>Training in progress...</p>
+                                    <p className={`status-badge ${statusData?.data?.experiment?.status}`}>
+                                        Status: {statusData?.data?.experiment?.status || 'Starting...'}
+                                    </p>
                                 </div>
                             </div>
 
                             <div className="progress-steps">
-                                <div className="step completed">
+                                <div className={`step ${['training', 'completed'].includes(statusData?.data?.experiment?.status) ? 'completed' : ''}`}>
                                     <CheckCircle size={20} />
-                                    <span>Data Preprocessing</span>
+                                    <span>Preprocessing</span>
                                 </div>
-                                <div className="step active">
-                                    <Clock size={20} className="animate-pulse" />
-                                    <span>Model Training</span>
+                                <div className={`step ${statusData?.data?.experiment?.status === 'training' ? 'active' : statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
+                                    <Clock size={20} className={statusData?.data?.experiment?.status === 'training' ? 'animate-pulse' : ''} />
+                                    <span>Training</span>
                                 </div>
-                                <div className="step">
+                                <div className={`step ${statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
                                     <div className="step-dot"></div>
                                     <span>Evaluation</span>
                                 </div>
-                                <div className="step">
-                                    <div className="step-dot"></div>
-                                    <span>Model Packaging</span>
-                                </div>
                             </div>
 
-                            <p className="progress-note">
-                                AutoML is training multiple models and will select the best one automatically.
-                            </p>
+                            {/* Live Logs Terminal */}
+                            <div className="logs-terminal">
+                                <div className="terminal-header">
+                                    <span>Build Logs</span>
+                                </div>
+                                <pre className="terminal-content">
+                                    {combinedLogs || 'Waiting for logs...'}
+                                    <div ref={logsEndRef} />
+                                </pre>
+                            </div>
                         </div>
                     ) : (
                         <div className="info-card card">
@@ -221,20 +287,6 @@ export default function Training() {
                                         <h4>Get Results</h4>
                                         <p>Review metrics and start making predictions</p>
                                     </div>
-                                </div>
-                            </div>
-
-                            <div className="algorithms-info">
-                                <h4>Supported Algorithms</h4>
-                                <div className="algorithm-tags">
-                                    <span className="tag">Logistic Regression</span>
-                                    <span className="tag">Random Forest</span>
-                                    <span className="tag">XGBoost</span>
-                                    <span className="tag">K-Means</span>
-                                    <span className="tag">ARIMA</span>
-                                    <span className="tag">Prophet</span>
-                                    <span className="tag">LSTM</span>
-                                    <span className="tag">MobileNet</span>
                                 </div>
                             </div>
                         </div>
