@@ -1,0 +1,297 @@
+.training-page {
+    max-width: 1200px;
+}
+
+.training-layout {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    gap: var(--space-6);
+}
+
+/* Config Panel */
+.config-panel {
+    height: fit-content;
+}
+
+.config-panel h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: var(--space-6);
+}
+
+.form-group {
+    margin-bottom: var(--space-5);
+}
+
+.form-group .label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.form-hint {
+    font-size: 0.75rem;
+    color: var(--color-gray-500);
+    margin-top: var(--space-2);
+}
+
+.textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.start-btn {
+    width: 100%;
+    padding: var(--space-4);
+    font-size: 1rem;
+    margin-top: var(--space-4);
+}
+
+/* Info Panel */
+.info-card h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: var(--space-6);
+}
+
+.info-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    margin-bottom: var(--space-8);
+}
+
+.info-step {
+    display: flex;
+    gap: var(--space-4);
+}
+
+.step-number {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.info-step h4 {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.info-step p {
+    font-size: 0.875rem;
+    color: var(--color-gray-400);
+}
+
+.algorithms-info {
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--color-gray-700);
+}
+
+.algorithms-info h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: var(--space-4);
+    color: var(--color-gray-300);
+}
+
+.algorithm-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.tag {
+    padding: var(--space-1) var(--space-3);
+    background: var(--color-gray-800);
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    color: var(--color-gray-300);
+}
+
+/* Progress Card */
+.progress-card {
+    height: fit-content;
+}
+
+.progress-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.progress-header h3 {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.progress-header p {
+    font-size: 0.875rem;
+    color: var(--color-gray-400);
+}
+
+.progress-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--color-gray-500);
+}
+
+.step.completed {
+    color: var(--color-success);
+}
+
+.step.active {
+    color: var(--color-primary-light);
+}
+
+.step-dot {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--color-gray-600);
+    border-radius: var(--radius-full);
+}
+
+.progress-note {
+    font-size: 0.875rem;
+    color: var(--color-gray-400);
+    padding: var(--space-4);
+    background: var(--color-gray-800);
+    border-radius: var(--radius-lg);
+}
+
+/* Responsive */
+@media (max-width: 968px) {
+    .training-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Status Badges */
+.status-badge {
+    display: inline-block;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.status-badge.starting {
+    color: var(--color-warning);
+    background: rgba(255, 179, 0, 0.1);
+}
+
+.status-badge.training {
+    color: var(--color-primary-light);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.status-badge.completed {
+    color: var(--color-success);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.status-badge.failed {
+    color: var(--color-error);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Logs Terminal */
+.logs-terminal {
+    background: #1e1e1e;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-gray-700);
+    overflow: hidden;
+    margin-top: var(--space-4);
+}
+
+.terminal-header {
+    background: #2d2d2d;
+    padding: var(--space-2) var(--space-4);
+    font-size: 0.75rem;
+    color: var(--color-gray-400);
+    border-bottom: 1px solid var(--color-gray-700);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.terminal-content {
+    padding: var(--space-4);
+    font-family: 'Fira Code', 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+    color: #e0e0e0;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin: 0;
+}
+
+/* Success Message */
+.success-message {
+    margin-top: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: var(--radius-lg);
+    text-align: center;
+}
+
+.success-message span {
+    color: var(--color-success);
+    font-weight: 500;
+}
+
+
+
+.success-message .btn-outline {
+    margin-top: var(--space-2);
+}
+
+.result-summary {
+    display: flex;
+    gap: var(--space-6);
+    background: white;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    margin: var(--space-3) 0;
+    box-shadow: var(--shadow-sm);
+}
+
+.result-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.result-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--color-gray-500);
+    font-weight: 600;
+}
+
+.result-value {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--color-gray-900);
+}
