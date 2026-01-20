@@ -30,6 +30,9 @@ class Experiment(db.Model):
     best_score = db.Column(db.Float)
     best_model_name = db.Column(db.String(100))
     
+    # Training results (includes model_package_path)
+    results = db.Column(db.JSON, default=dict)
+    
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -44,6 +47,7 @@ class Experiment(db.Model):
     
     def to_dict(self):
         """Serialize to dictionary"""
+        results = self.results or {}
         return {
             'id': self.id,
             'name': self.name,
@@ -55,7 +59,8 @@ class Experiment(db.Model):
             'best_model_name': self.best_model_name,
             'best_score': self.best_score,
             'created_at': self.created_at.isoformat(),
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'has_package': bool(results.get('model_package_path'))
         }
     
     def __repr__(self):

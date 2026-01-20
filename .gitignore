@@ -69,7 +69,7 @@ frontend/dist/
 *.h5
 *.joblib
 *.model
-models/
+/models/
 *.onnx
 
 # MinIO data (local development)

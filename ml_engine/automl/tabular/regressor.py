@@ -1,13 +1,21 @@
 """
 Tabular Regression Module
-Supports: Linear Regression, Random Forest, XGBoost
+Supports: Linear Regression, Ridge, Random Forest, XGBoost, Gradient Boosting, SVR, KNN, Decision Tree, AdaBoost, Extra Trees, Lasso, ElasticNet, LightGBM
 """
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional
 from sklearn.model_selection import cross_val_score, train_test_split
-from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.ensemble import (
+    RandomForestRegressor, 
+    GradientBoostingRegressor, 
+    AdaBoostRegressor, 
+    ExtraTreesRegressor
+)
+from sklearn.svm import SVR
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import joblib
 
@@ -16,6 +24,12 @@ try:
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
+
+try:
+    from lightgbm import LGBMRegressor
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
 
 
 class TabularRegressor:
@@ -30,8 +44,40 @@ class TabularRegressor:
             'class': Ridge,
             'params': {'random_state': 42}
         },
+        'lasso': {
+            'class': Lasso,
+            'params': {'random_state': 42, 'max_iter': 2000}
+        },
+        'elasticnet': {
+            'class': ElasticNet,
+            'params': {'random_state': 42, 'max_iter': 2000}
+        },
         'random_forest': {
             'class': RandomForestRegressor,
+            'params': {'n_estimators': 100, 'random_state': 42, 'n_jobs': -1}
+        },
+        'gradient_boosting': {
+            'class': GradientBoostingRegressor,
+            'params': {'n_estimators': 100, 'random_state': 42, 'max_depth': 5}
+        },
+        'svr': {
+            'class': SVR,
+            'params': {'kernel': 'rbf'}
+        },
+        'knn': {
+            'class': KNeighborsRegressor,
+            'params': {'n_neighbors': 5, 'n_jobs': -1}
+        },
+        'decision_tree': {
+            'class': DecisionTreeRegressor,
+            'params': {'random_state': 42, 'max_depth': 10}
+        },
+        'adaboost': {
+            'class': AdaBoostRegressor,
+            'params': {'n_estimators': 100, 'random_state': 42}
+        },
+        'extra_trees': {
+            'class': ExtraTreesRegressor,
             'params': {'n_estimators': 100, 'random_state': 42, 'n_jobs': -1}
         }
     }
@@ -43,11 +89,18 @@ class TabularRegressor:
                 'params': {'n_estimators': 100, 'random_state': 42}
             }
         
+        if LIGHTGBM_AVAILABLE:
+            self.MODELS['lightgbm'] = {
+                'class': LGBMRegressor,
+                'params': {'n_estimators': 100, 'random_state': 42, 'verbose': -1}
+            }
+        
         self.trained_models = {}
         self.best_model = None
         self.best_model_name = None
         self.best_score = float('-inf')
         self.results = []
+
     
     def train(
         self,
@@ -61,6 +114,10 @@ class TabularRegressor:
         if models_to_train is None:
             models_to_train = list(self.MODELS.keys())
         
+        print(f"[TabularRegressor] Starting training with {len(models_to_train)} algorithms:", flush=True)
+        for i, name in enumerate(models_to_train, 1):
+            print(f"  {i}. {name}", flush=True)
+        
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42
         )
@@ -72,10 +129,12 @@ class TabularRegressor:
                 continue
             
             try:
+                print(f"[TabularRegressor] Training {model_name}...", flush=True)
                 result = self._train_single_model(
                     model_name, X_train, X_test, y_train, y_test, cv_folds
                 )
                 self.results.append(result)
+                print(f"[TabularRegressor] {model_name} completed - R2 Score: {result['cv_score_mean']:.4f}", flush=True)
                 
                 # Track best model (using R2 score)
                 if result['cv_score_mean'] > self.best_score:
@@ -84,17 +143,21 @@ class TabularRegressor:
                     self.best_model_name = model_name
                     
             except Exception as e:
+                print(f"[TabularRegressor] {model_name} FAILED: {str(e)}", flush=True)
                 self.results.append({
                     'model_name': model_name,
                     'status': 'failed',
                     'error': str(e)
                 })
         
+        print(f"[TabularRegressor] Training complete! Best model: {self.best_model_name} (R2: {self.best_score:.4f})", flush=True)
+        
         return {
             'results': self.results,
             'best_model': self.best_model_name,
             'best_score': self.best_score
         }
+
     
     def _train_single_model(
         self,

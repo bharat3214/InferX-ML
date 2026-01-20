@@ -32,6 +32,7 @@ def create_app(config_class=Config):
     from .routes.training import training_bp
     from .routes.predictions import predictions_bp
     from .routes.models import models_bp
+    from .routes.models import models_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(datasets_bp, url_prefix='/api/datasets')

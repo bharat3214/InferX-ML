@@ -76,10 +76,181 @@ class ModelPackager:
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
         
-        # Generate requirements.txt
+        # Generate model_info.json (headline/summary of trained model)
+        model_info = self._generate_model_info(metadata, feature_schema)
+        model_info_path = os.path.join(package_dir, 'model_info.json')
+        with open(model_info_path, 'w', encoding='utf-8') as f:
+            json.dump(model_info, f, indent=2, ensure_ascii=False)
+        
+        # Generate loader.py (script to load and use the model)
+        loader_code = self._generate_loader_script(model_format, metadata)
+        loader_path = os.path.join(package_dir, 'loader.py')
+        with open(loader_path, 'w', encoding='utf-8') as f:
+            f.write(loader_code)
+        
+        # Generate Streamlit app (streamlit_app.py)
+        streamlit_code = self._generate_streamlit_app(metadata, feature_schema)
+        streamlit_path = os.path.join(package_dir, 'streamlit_app.py')
+        with open(streamlit_path, 'w', encoding='utf-8') as f:
+            f.write(streamlit_code)
+        
+        # Generate requirements.txt (includes streamlit)
         self._generate_requirements(package_dir, model_format)
         
         return package_dir
+    
+    def _generate_model_info(self, metadata: Dict[str, Any], feature_schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate model_info.json with headline/summary information"""
+        return {
+            'model_name': metadata.get('name', 'Unnamed Model'),
+            'description': f"Trained {metadata.get('problem_type', 'ML')} model for predicting {metadata.get('target_column', 'target')}",
+            'problem_type': metadata.get('problem_type'),
+            'target_column': metadata.get('target_column'),
+            'best_algorithm': metadata.get('best_model'),
+            'best_score': metadata.get('best_score'),
+            'training_date': metadata.get('packaged_at'),
+            'features': list(feature_schema.get('features', {}).keys()),
+            'num_features': len(feature_schema.get('features', {})),
+            'usage': 'Load this model using loader.py or directly with joblib.load("model.pkl")'
+        }
+    
+    def _generate_loader_script(self, model_format: str, metadata: Dict[str, Any]) -> str:
+        """Generate loader.py script for loading and using the model"""
+        
+        model_name = metadata.get('name', 'model')
+        target_col = metadata.get('target_column', 'target')
+        problem_type = metadata.get('problem_type', 'classification')
+        
+        loader_code = f'''"""
+Model Loader - {model_name}
+Auto-generated script to load and use the trained model
+
+Usage:
+    from loader import load_model, predict
+    
+    model, preprocessor = load_model()
+    result = predict(model, preprocessor, your_data)
+"""
+import os
+import json
+import joblib
+import pandas as pd
+import numpy as np
+
+# Get the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def load_model():
+    """
+    Load the trained model and preprocessor
+    
+    Returns:
+        tuple: (model, preprocessor)
+    """
+    model_path = os.path.join(SCRIPT_DIR, 'model.{model_format}')
+    preprocessor_path = os.path.join(SCRIPT_DIR, 'preprocessor.pkl')
+    
+    model = joblib.load(model_path)
+    
+    preprocessor = None
+    if os.path.exists(preprocessor_path):
+        preprocessor = joblib.load(preprocessor_path)
+    
+    return model, preprocessor
+
+
+def load_model_info():
+    """Load model information/metadata"""
+    info_path = os.path.join(SCRIPT_DIR, 'model_info.json')
+    with open(info_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def load_feature_schema():
+    """Load feature schema for input validation"""
+    schema_path = os.path.join(SCRIPT_DIR, 'feature_schema.json')
+    with open(schema_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def predict(model, preprocessor, data):
+    """
+    Make predictions using the trained model
+    
+    Args:
+        model: Loaded model object
+        preprocessor: Loaded preprocessor (can be None)
+        data: Input data (dict, DataFrame, or numpy array)
+        
+    Returns:
+        Prediction result
+    """
+    # Convert dict to DataFrame if needed
+    if isinstance(data, dict):
+        data = pd.DataFrame([data])
+    elif isinstance(data, list):
+        data = pd.DataFrame(data)
+    
+    # Apply preprocessing if available
+    if preprocessor is not None:
+        data = preprocessor.transform(data)
+    
+    # Make prediction
+    prediction = model.predict(data)
+    
+    return prediction
+
+
+def predict_proba(model, preprocessor, data):
+    """
+    Get prediction probabilities (for classification models)
+    
+    Args:
+        model: Loaded model object
+        preprocessor: Loaded preprocessor (can be None)
+        data: Input data
+        
+    Returns:
+        Probability predictions
+    """
+    if isinstance(data, dict):
+        data = pd.DataFrame([data])
+    elif isinstance(data, list):
+        data = pd.DataFrame(data)
+    
+    if preprocessor is not None:
+        data = preprocessor.transform(data)
+    
+    if hasattr(model, 'predict_proba'):
+        return model.predict_proba(data)
+    else:
+        return model.predict(data)
+
+
+# Example usage
+if __name__ == '__main__':
+    # Load model info
+    info = load_model_info()
+    print(f"Model: {{info['model_name']}}")
+    print(f"Type: {{info['problem_type']}}")
+    print(f"Target: {{info['target_column']}}")
+    print(f"Best Score: {{info['best_score']}}")
+    print(f"Features: {{info['num_features']}}")
+    print()
+    
+    # Load model
+    model, preprocessor = load_model()
+    print("Model loaded successfully!")
+    print()
+    
+    # Show example usage
+    schema = load_feature_schema()
+    print("Required features:")
+    for feature in schema.get('features', {{}}).keys():
+        print(f"  - {{feature}}")
+'''
+        return loader_code
     
     def _generate_ui_schema(
         self,
@@ -143,7 +314,8 @@ class ModelPackager:
             'pandas>=2.0.0',
             'numpy>=1.24.0',
             'scikit-learn>=1.3.0',
-            'joblib>=1.3.0'
+            'joblib>=1.3.0',
+            'streamlit>=1.28.0'
         ]
         
         if model_format == 'h5':
@@ -152,6 +324,206 @@ class ModelPackager:
         requirements_path = os.path.join(package_dir, 'requirements.txt')
         with open(requirements_path, 'w') as f:
             f.write('\n'.join(requirements))
+    
+    def _generate_streamlit_app(self, metadata: Dict[str, Any], feature_schema: Dict[str, Any]) -> str:
+        """Generate a Streamlit app for model predictions"""
+        
+        model_name = metadata.get('name', 'ML Model')
+        target_col = metadata.get('target_column', 'target')
+        problem_type = metadata.get('problem_type', 'classification')
+        best_model = metadata.get('best_model', 'Unknown')
+        best_score = metadata.get('best_score', 0)
+        
+        # Build form fields dynamically
+
+        # Build form fields dynamically
+        features = feature_schema.get('features', {})
+        feature_fields = []
+        
+        for feature_name, feature_info in features.items():
+            dtype = feature_info.get('dtype', 'object')
+            semantic_type = feature_info.get('semantic_type', 'unknown')
+            label = feature_name.replace('_', ' ').title()
+            
+            field_code = ""
+            if semantic_type == 'categorical':
+                categories = feature_info.get('categories', [])
+                if categories:
+                    cats_str = str(categories)
+                    field_code = f'''
+        st.session_state.input_data["{feature_name}"] = st.selectbox(
+            "{label}",
+            options={cats_str},
+            key="{feature_name}"
+        )'''
+                else:
+                    field_code = f'''
+        st.session_state.input_data["{feature_name}"] = st.text_input("{label}", key="{feature_name}")'''
+            
+            elif semantic_type == 'numeric':
+                min_val = feature_info.get('min', 0)
+                max_val = feature_info.get('max', 100)
+                default_val = feature_info.get('mean') or feature_info.get('median') or 0
+                
+                # Clean up values
+                min_val = float(min_val) if min_val is not None else 0.0
+                max_val = float(max_val) if max_val is not None else 100.0
+                default_val = float(default_val) if default_val is not None else min_val
+                
+                field_code = f'''
+        st.session_state.input_data["{feature_name}"] = st.number_input(
+            "{label}",
+            min_value={min_val},
+            max_value={max_val},
+            value={default_val},
+            key="{feature_name}"
+        )'''
+            
+            elif semantic_type == 'boolean':
+                field_code = f'''
+        st.session_state.input_data["{feature_name}"] = st.checkbox("{label}", key="{feature_name}")'''
+            
+            else:
+                field_code = f'''
+        st.session_state.input_data["{feature_name}"] = st.text_input("{label}", key="{feature_name}")'''
+            
+            feature_fields.append(field_code)
+
+        # Split fields into two columns
+        mid_idx = (len(feature_fields) + 1) // 2
+        col1_fields = feature_fields[:mid_idx]
+        col2_fields = feature_fields[mid_idx:]
+        
+        col1_code = "".join(col1_fields) if col1_fields else "        pass"
+        col2_code = "".join(col2_fields) if col2_fields else "        pass"
+        
+        streamlit_code = f'''"""
+Streamlit Prediction App - {model_name}
+Auto-generated Streamlit UI for making predictions
+
+Usage:
+    streamlit run streamlit_app.py
+"""
+import streamlit as st
+import pandas as pd
+import numpy as np
+import json
+import os
+
+# Page config
+st.set_page_config(
+    page_title="{model_name} - Predictions",
+    page_icon="🤖",
+    layout="wide"
+)
+
+# Get script directory
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load model and preprocessor
+@st.cache_resource
+def load_model():
+    import joblib
+    model_path = os.path.join(SCRIPT_DIR, 'model.pkl')
+    preprocessor_path = os.path.join(SCRIPT_DIR, 'preprocessor.pkl')
+    
+    model = joblib.load(model_path)
+    preprocessor = None
+    if os.path.exists(preprocessor_path):
+        preprocessor = joblib.load(preprocessor_path)
+    
+    return model, preprocessor
+
+@st.cache_data
+def load_model_info():
+    info_path = os.path.join(SCRIPT_DIR, 'model_info.json')
+    with open(info_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+# Load model
+model, preprocessor = load_model()
+model_info = load_model_info()
+
+# Header
+st.title("🤖 " + model_info.get('model_name', '{model_name}'))
+st.markdown(model_info.get('description', 'Make predictions using the trained model'))
+
+# Sidebar with model info
+with st.sidebar:
+    st.header("📊 Model Information")
+    st.metric("Algorithm", "{best_model}")
+    st.metric("Score", f"{{model_info.get('best_score', 0):.2%}}")
+    st.metric("Target", "{target_col}")
+    st.metric("Features", model_info.get('num_features', 0))
+    
+    st.divider()
+    st.caption("Model trained with InferX-ML")
+
+# Initialize session state for input data
+if 'input_data' not in st.session_state:
+    st.session_state.input_data = {{}}
+
+# Main content
+st.header("🎯 Make a Prediction")
+
+# Create input form
+with st.form("prediction_form"):
+    st.subheader("Enter Feature Values")
+    
+    # Create columns for better layout
+    col1, col2 = st.columns(2)
+    
+    with col1:{col1_code}
+    
+    with col2:{col2_code}
+    
+    submitted = st.form_submit_button("🚀 Predict", use_container_width=True)
+
+if submitted:
+    try:
+        # Create DataFrame from input
+        input_df = pd.DataFrame([st.session_state.input_data])
+        
+        # Apply preprocessing if available
+        if preprocessor is not None:
+            input_processed = preprocessor.transform(input_df)
+        else:
+            input_processed = input_df
+        
+        # Make prediction
+        prediction = model.predict(input_processed)
+        
+        # Display result
+        st.divider()
+        st.header("📋 Prediction Result")
+        
+        result_col1, result_col2 = st.columns([2, 1])
+        
+        with result_col1:
+            st.success(f"**Predicted {target_col}:** {{prediction[0]}}")
+        
+        with result_col2:
+            # Show probability if available
+            if hasattr(model, 'predict_proba'):
+                try:
+                    proba = model.predict_proba(input_processed)
+                    confidence = max(proba[0]) * 100
+                    st.metric("Confidence", f"{{confidence:.1f}}%")
+                except:
+                    pass
+        
+        # Show input summary
+        with st.expander("📝 Input Summary"):
+            st.json(st.session_state.input_data)
+            
+    except Exception as e:
+        st.error(f"Prediction failed: {{str(e)}}")
+
+# Footer
+st.divider()
+st.caption("Generated by InferX-ML | Powered by Streamlit")
+'''
+        return streamlit_code
     
     def create_zip(self, package_dir: str) -> str:
         """Create a zip file of the package"""
