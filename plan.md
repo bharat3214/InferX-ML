@@ -49,6 +49,7 @@ The platform uses a **rule-based AutoML approach** where users don't manually se
 | **statsmodels** | ARIMA models |
 | **TensorFlow/Keras** | Deep learning (LSTM, MobileNet, EfficientNet) |
 | **SHAP** | Model explainability |
+| **Google Gemini API** | AI-powered goal analysis & target column detection |
 
 ### DevOps
 | Technology | Purpose |
@@ -102,11 +103,16 @@ The platform uses a **rule-based AutoML approach** where users don't manually se
 │                           USER JOURNEY                                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  1. UPLOAD         2. DEFINE GOAL        3. TRAIN           4. PREDICT      │
-│  ─────────         ───────────────       ───────            ─────────       │
-│  CSV/Excel/        Natural language      Automatic          Auto-generated  │
-│  Images            (multilingual +       model selection    prediction UI   │
-│                    voice support)        & training                         │
+│  1. UPLOAD         2. DESCRIBE GOAL     3. AI ANALYSIS      4. TRAIN        │
+│  ─────────         ────────────────     ─────────────       ───────         │
+│  CSV/Excel/        Natural language     Gemini AI suggests  Automatic       │
+│  Images            prompt               target column &     model training  │
+│                                         problem type                        │
+│                                                                              │
+│  5. PREDICT        6. DOWNLOAD          7. DEPLOY           8. MONITOR       │
+│  ─────────         ────────────────     ────────────────    ─────────        │
+│  Auto-generated    Download model       Deploy model for    Track model      │
+│  prediction UI     package (.zip)       production use      performance      │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -115,8 +121,8 @@ The platform uses a **rule-based AutoML approach** where users don't manually se
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌──────────┐   ┌──────────────┐   ┌───────────────┐   ┌────────────────┐   │
-│  │  Data    │ → │   Problem    │ → │    Model      │ → │    Feature     │   │
-│  │ Profiler │   │   Detector   │   │   Selector    │   │   Engineer     │   │
+│  │  Gemini  │ → │   Problem    │ → │    Model      │ → │    Feature     │   │
+│  │ Analyzer │   │   Detector   │   │   Selector    │   │   Engineer     │   │
 │  └──────────┘   └──────────────┘   └───────────────┘   └────────────────┘   │
 │       │                                                         │            │
 │       │         ┌──────────────┐   ┌───────────────┐           │            │
@@ -125,10 +131,10 @@ The platform uses a **rule-based AutoML approach** where users don't manually se
 │       │                │                                                     │
 │       ▼                ▼                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    MODEL PACKAGING (PRODUCTION READY)                │    │
+│  │                    MODEL PACKAGING + ORDER GENERATION                │    │
 │  │  ┌────────────────┬────────────────┬────────────────┬─────────────┐ │    │
-│  │  │ Trained Model  │ Preprocessing  │ Feature Schema │  UI Schema  │ │    │
-│  │  │ (.pkl / .h5)   │   Pipeline     │    (.json)     │   (.json)   │ │    │
+│  │  │ Trained Model  │ Preprocessing  │ Streamlit UI   │  Gemini     │ │    │
+│  │  │ (.pkl / .h5)   │   Pipeline     │  (Predictions) │  Reports    │ │    │
 │  │  └────────────────┴────────────────┴────────────────┴─────────────┘ │    │
 │  │  + Metadata (metrics, version, timestamp)                            │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
@@ -227,15 +233,13 @@ InferX-ML/
 │   │   ├── routes/                   # API routes
 │   │   │   ├── auth.py
 │   │   │   ├── datasets.py
-│   │   │   ├── training.py
+│   │   │   ├── training.py           # Includes /analyze-prompt endpoint
 │   │   │   └── predictions.py
 │   │   ├── services/                 # Business logic
 │   │   │   ├── data_profiler.py
 │   │   │   ├── problem_detector.py
-│   │   │   ├── model_selector.py
-│   │   │   ├── feature_engineer.py
-│   │   │   ├── trainer.py
-│   │   │   ├── evaluator.py
+│   │   │   ├── gemini_service.py     # AI-powered goal analysis (Groq/Gemini)
+│   │   │   ├── minio_service.py
 │   │   │   └── explainer.py
 │   │   └── utils/                    # Utilities
 │   ├── requirements.txt
@@ -362,6 +366,7 @@ InferX-ML/
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/training/start` | Start training job |
+| POST | `/api/training/analyze-prompt` | **NEW:** AI-powered target column suggestion |
 | GET | `/api/training/{job_id}/status` | Get training status |
 | GET | `/api/training/{job_id}/logs` | Get training logs |
 | POST | `/api/training/{job_id}/cancel` | Cancel training |
@@ -381,6 +386,7 @@ InferX-ML/
 | POST | `/api/predict/{model_id}` | Single prediction |
 | POST | `/api/predict/{model_id}/batch` | Batch prediction (file) |
 | GET | `/api/predict/{model_id}/explain` | Get prediction explanation |
+
 
 ---
 
@@ -442,10 +448,20 @@ InferX-ML/
   - Dataset size
   - Feature characteristics
 
-- **Goal Definition**: Future enhancement will support natural language goal definition with multilingual and voice support.
+- **🆕 AI-Powered Goal Analysis**: Users can describe their goal in natural language (e.g., "I want to predict inventory reorder quantity"). Gemini AI analyzes the dataset and suggests:
+  - Target column
+  - Problem type (classification/regression/timeseries)
+  - Preprocessing recommendations
+  - Environmental factors to consider
+
+- **🆕 Order Management**: After predictions, the system generates AI-powered order recommendations:
+  - Automatic order quantity calculation
+  - Risk assessment
+  - Human approval workflow (pending → approved → fulfilled)
+  - Future: Supplier API integration for automated ordering
 
 - **Model Explainability**: Marked as **VERY IMPORTANT** - every prediction should have clear explanations.
 
 ---
 
-*Last Updated: January 1, 2026*
+*Last Updated: January 10, 2026*
