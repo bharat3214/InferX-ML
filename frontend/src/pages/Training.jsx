@@ -7,7 +7,9 @@ import {
     Target,
     CheckCircle,
     Clock,
-    AlertCircle
+    AlertCircle,
+    Sparkles,
+    Wand2
 } from 'lucide-react'
 import { datasetsApi, trainingApi } from '../services/api'
 import './Training.css'
@@ -24,6 +26,12 @@ export default function Training() {
     const [isTraining, setIsTraining] = useState(false)
     const [currentJob, setCurrentJob] = useState(null)
     const logsEndRef = useRef(null)
+
+    // AI Prompt Analysis State
+    const [aiPrompt, setAiPrompt] = useState('')
+    const [aiAnalysis, setAiAnalysis] = useState(null)
+    const [isAnalyzing, setIsAnalyzing] = useState(false)
+    const [analysisError, setAnalysisError] = useState(null)
 
     const { data: datasetsData } = useQuery({
         queryKey: ['datasets'],
@@ -70,6 +78,34 @@ export default function Training() {
     // Check for completion
     if (isTraining && statusData?.data?.experiment?.status === 'completed') {
         setIsTraining(false)
+    }
+
+    // AI Prompt Analysis Handler
+    const handleAnalyzeWithAI = async () => {
+        if (!selectedDataset || !aiPrompt.trim()) return
+
+        setIsAnalyzing(true)
+        setAnalysisError(null)
+        setAiAnalysis(null)
+
+        try {
+            const response = await trainingApi.analyzePrompt(parseInt(selectedDataset), aiPrompt)
+            if (response.data.success) {
+                setAiAnalysis(response.data.analysis)
+                // Auto-select the suggested target column
+                if (response.data.analysis.suggested_target) {
+                    setTargetColumn(response.data.analysis.suggested_target)
+                }
+                // Use the prompt as goal description
+                setGoalDescription(aiPrompt)
+            } else {
+                setAnalysisError(response.data.error || 'Analysis failed')
+            }
+        } catch (error) {
+            setAnalysisError(error.response?.data?.error || 'Failed to analyze with AI')
+        } finally {
+            setIsAnalyzing(false)
+        }
     }
 
     const handleStartTraining = () => {
@@ -125,6 +161,90 @@ export default function Training() {
                             ))}
                         </select>
                     </div>
+
+                    {/* AI Goal Analysis Section */}
+                    {selectedDataset && columns.length > 0 && (
+                        <div className="ai-analysis-section">
+                            <div className="form-group">
+                                <label className="label">
+                                    <Sparkles size={16} />
+                                    Describe Your Goal (AI-Powered)
+                                </label>
+                                <div className="ai-input-row">
+                                    <textarea
+                                        className="input textarea"
+                                        value={aiPrompt}
+                                        onChange={(e) => setAiPrompt(e.target.value)}
+                                        placeholder="e.g., I want to predict which products need restocking based on sales patterns..."
+                                        rows={2}
+                                        disabled={isTraining || isAnalyzing}
+                                    />
+                                    <button
+                                        className="btn btn-secondary ai-analyze-btn"
+                                        onClick={handleAnalyzeWithAI}
+                                        disabled={!aiPrompt.trim() || isAnalyzing || isTraining}
+                                    >
+                                        {isAnalyzing ? (
+                                            <div className="spinner" style={{ width: 16, height: 16 }}></div>
+                                        ) : (
+                                            <Wand2 size={16} />
+                                        )}
+                                        {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                                    </button>
+                                </div>
+                                <p className="form-hint">
+                                    Let AI suggest the best target column based on your goal
+                                </p>
+                            </div>
+
+                            {/* AI Analysis Results */}
+                            {aiAnalysis && (
+                                <div className="ai-analysis-result">
+                                    <div className="ai-result-header">
+                                        <Sparkles size={18} className="text-primary" />
+                                        <span>AI Recommendation</span>
+                                    </div>
+                                    <div className="ai-result-content">
+                                        <div className="ai-result-item">
+                                            <strong>Suggested Target:</strong>
+                                            <span className="ai-target-badge">{aiAnalysis.suggested_target}</span>
+                                        </div>
+                                        <div className="ai-result-item">
+                                            <strong>Problem Type:</strong>
+                                            <span className="ai-problem-badge">{aiAnalysis.problem_type}</span>
+                                        </div>
+                                        {aiAnalysis.confidence && (
+                                            <div className="ai-result-item">
+                                                <strong>Confidence:</strong>
+                                                <span>{(aiAnalysis.confidence * 100).toFixed(0)}%</span>
+                                            </div>
+                                        )}
+                                        <div className="ai-reasoning">
+                                            <strong>Reasoning:</strong>
+                                            <p>{aiAnalysis.reasoning}</p>
+                                        </div>
+                                        {aiAnalysis.preprocessing_suggestions?.length > 0 && (
+                                            <div className="ai-suggestions">
+                                                <strong>Preprocessing Tips:</strong>
+                                                <ul>
+                                                    {aiAnalysis.preprocessing_suggestions.map((tip, i) => (
+                                                        <li key={i}>{tip}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {analysisError && (
+                                <div className="ai-error">
+                                    <AlertCircle size={16} />
+                                    <span>{analysisError}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {selectedDataset && columns.length > 0 && (
                         <div className="form-group">

@@ -1,13 +1,21 @@
 """
 Tabular Classification Module
-Supports: Logistic Regression, Random Forest, XGBoost
+Supports: Logistic Regression, Random Forest, XGBoost, Gradient Boosting, SVM, KNN, Decision Tree, AdaBoost, Extra Trees, LightGBM
 """
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import (
+    RandomForestClassifier, 
+    GradientBoostingClassifier, 
+    AdaBoostClassifier, 
+    ExtraTreesClassifier
+)
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 import joblib
 
@@ -16,6 +24,12 @@ try:
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
+
+try:
+    from lightgbm import LGBMClassifier
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
 
 
 class TabularClassifier:
@@ -29,6 +43,30 @@ class TabularClassifier:
         'random_forest': {
             'class': RandomForestClassifier,
             'params': {'n_estimators': 100, 'random_state': 42, 'n_jobs': -1}
+        },
+        'gradient_boosting': {
+            'class': GradientBoostingClassifier,
+            'params': {'n_estimators': 100, 'random_state': 42, 'max_depth': 5}
+        },
+        'svm': {
+            'class': SVC,
+            'params': {'kernel': 'rbf', 'probability': True, 'random_state': 42}
+        },
+        'knn': {
+            'class': KNeighborsClassifier,
+            'params': {'n_neighbors': 5, 'n_jobs': -1}
+        },
+        'decision_tree': {
+            'class': DecisionTreeClassifier,
+            'params': {'random_state': 42, 'max_depth': 10}
+        },
+        'adaboost': {
+            'class': AdaBoostClassifier,
+            'params': {'n_estimators': 100, 'random_state': 42}
+        },
+        'extra_trees': {
+            'class': ExtraTreesClassifier,
+            'params': {'n_estimators': 100, 'random_state': 42, 'n_jobs': -1}
         }
     }
     
@@ -39,11 +77,18 @@ class TabularClassifier:
                 'params': {'n_estimators': 100, 'random_state': 42, 'use_label_encoder': False, 'eval_metric': 'logloss'}
             }
         
+        if LIGHTGBM_AVAILABLE:
+            self.MODELS['lightgbm'] = {
+                'class': LGBMClassifier,
+                'params': {'n_estimators': 100, 'random_state': 42, 'verbose': -1}
+            }
+        
         self.trained_models = {}
         self.best_model = None
         self.best_model_name = None
         self.best_score = 0
         self.results = []
+
     
     def train(
         self,
@@ -57,6 +102,10 @@ class TabularClassifier:
         if models_to_train is None:
             models_to_train = list(self.MODELS.keys())
         
+        print(f"[TabularClassifier] Starting training with {len(models_to_train)} algorithms:", flush=True)
+        for i, name in enumerate(models_to_train, 1):
+            print(f"  {i}. {name}", flush=True)
+        
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=y
         )
@@ -68,10 +117,12 @@ class TabularClassifier:
                 continue
             
             try:
+                print(f"[TabularClassifier] Training {model_name}...", flush=True)
                 result = self._train_single_model(
                     model_name, X_train, X_test, y_train, y_test, cv_folds
                 )
                 self.results.append(result)
+                print(f"[TabularClassifier] {model_name} completed - CV Score: {result['cv_score_mean']:.4f}", flush=True)
                 
                 # Track best model
                 if result['cv_score_mean'] > self.best_score:
@@ -80,17 +131,21 @@ class TabularClassifier:
                     self.best_model_name = model_name
                     
             except Exception as e:
+                print(f"[TabularClassifier] {model_name} FAILED: {str(e)}", flush=True)
                 self.results.append({
                     'model_name': model_name,
                     'status': 'failed',
                     'error': str(e)
                 })
         
+        print(f"[TabularClassifier] Training complete! Best model: {self.best_model_name} (score: {self.best_score:.4f})", flush=True)
+        
         return {
             'results': self.results,
             'best_model': self.best_model_name,
             'best_score': self.best_score
         }
+
     
     def _train_single_model(
         self,

@@ -16,6 +16,7 @@ The platform is built entirely on **open-source technologies**, including **Stre
 
 * 🚀 **No-code, user-friendly ML workflow**
 * 📊 **Supports tabular (CSV/Excel), time-series, and image datasets**
+* ⚙️ **AI-powered goal analysis** (Groq/Gemini integration)\r
 * ⚙️ **Automated data profiling, preprocessing, and model training**
 * 📈 **Built-in model evaluation and explainability**
 * 🧩 **Open-source, lightweight, and scalable-by-design**
@@ -290,7 +291,9 @@ Password: demo123
 | `MINIO_ENDPOINT` | MinIO server | localhost:9000 |
 | `MINIO_ACCESS_KEY` | MinIO access key | minioadmin |
 | `MINIO_SECRET_KEY` | MinIO secret key | minioadmin |
-| `JWT_SECRET_KEY` | JWT signing key | your-jwt-secret-key |
+| `JWT_SECRET_KEY` | JWT signing key | your-jwt-secret-key |\r
+| `GROQ_API_KEY` | Groq API key for AI analysis | *(required for AI features)* |\r
+| `GEMINI_API_KEY` | Google Gemini API key (alternative) | *(optional)* |
 
 ---
 
@@ -340,3 +343,6 @@ This project is licensed under the MIT License.
 
 For issues or questions, please open an issue on GitHub.
 
+#   H a c k a t h o n - A H 
+ 
+ 

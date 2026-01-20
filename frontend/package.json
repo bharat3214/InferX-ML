@@ -2,6 +2,7 @@
   "name": "inferx-ml-frontend",
   "version": "1.0.0",
   "description": "No-Code AI/ML Platform Frontend",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "vite --host",

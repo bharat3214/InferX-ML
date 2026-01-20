@@ -6,8 +6,136 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models.dataset import Dataset
 from app.models.experiment import Experiment, TrainingJob
+import pandas as pd
+import io
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 training_bp = Blueprint('training', __name__)
+
+
+# CombinedPreprocessor at module level for pickle compatibility
+class CombinedPreprocessor:
+    """Preprocessor that handles both categorical encoding and scaling"""
+    
+    def __init__(self):
+        self.label_encoders = {}
+        self.scaler = StandardScaler()
+        self.feature_columns = None
+        self.categorical_columns = []
+        self.numeric_columns = []
+    
+    def fit_transform(self, X):
+        self.feature_columns = list(X.columns)
+        self.categorical_columns = list(X.select_dtypes(include=['object']).columns)
+        self.numeric_columns = [c for c in self.feature_columns if c not in self.categorical_columns]
+        
+        X_processed = X.copy()
+        
+        # Encode categorical features
+        for col in self.categorical_columns:
+            self.label_encoders[col] = LabelEncoder()
+            X_processed[col] = self.label_encoders[col].fit_transform(X_processed[col].astype(str))
+        
+        # Fill missing values
+        X_processed = X_processed.fillna(X_processed.median())
+        
+        # Scale all features
+        return self.scaler.fit_transform(X_processed)
+    
+    def transform(self, X):
+        import pandas as pd
+        X_processed = X.copy()
+        
+        # Encode categorical features
+        for col in self.categorical_columns:
+            if col in X_processed.columns and col in self.label_encoders:
+                le = self.label_encoders[col]
+                # Handle unseen labels by using the most frequent class
+                X_processed[col] = X_processed[col].astype(str).apply(
+                    lambda x: le.transform([x])[0] if x in le.classes_ else 0
+                )
+        
+        # Handle missing columns (fill with 0)
+        for col in self.feature_columns:
+            if col not in X_processed.columns:
+                X_processed[col] = 0
+        
+        # Reorder columns and fill missing values
+        X_processed = X_processed[self.feature_columns].fillna(0)
+        
+        return self.scaler.transform(X_processed)
+
+
+@training_bp.route('/analyze-prompt', methods=['POST'])
+@jwt_required()
+def analyze_with_prompt():
+    """
+    Analyze a dataset with a natural language prompt using Gemini AI.
+    Returns suggested target column, problem type, and reasoning.
+    """
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    dataset_id = data.get('dataset_id')
+    prompt = data.get('prompt', '')
+    
+    if not dataset_id:
+        return jsonify({'error': 'Dataset ID is required'}), 400
+    
+    if not prompt:
+        return jsonify({'error': 'Prompt is required'}), 400
+    
+    # Verify dataset exists and belongs to user
+    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
+    if not dataset:
+        return jsonify({'error': 'Dataset not found'}), 404
+    
+    try:
+        # Import Gemini service
+        from app.services.gemini_service import get_gemini_service
+        from app.services.minio_service import get_minio_service
+        
+        # Load dataset to get sample data
+        minio_service = get_minio_service()
+        file_content = minio_service.download_bytes('datasets', dataset.file_path)
+        
+        if not file_content:
+            return jsonify({'error': 'Could not load dataset'}), 500
+        
+        df = pd.read_csv(io.BytesIO(file_content))
+        
+        # Prepare data for Gemini
+        columns = list(df.columns)
+        column_types = {col: str(df[col].dtype) for col in columns}
+        sample_data = df.head(10).to_dict(orient='records')
+        
+        # Call Gemini to analyze
+        gemini_service = get_gemini_service()
+        result = gemini_service.analyze_dataset_with_prompt(
+            columns=columns,
+            column_types=column_types,
+            sample_data=sample_data,
+            user_prompt=prompt
+        )
+        
+        return jsonify({
+            'success': True,
+            'analysis': result
+        }), 200
+        
+    except ValueError as e:
+        # Gemini API key not configured
+        return jsonify({
+            'error': str(e),
+            'suggestion': 'Please configure GEMINI_API_KEY in your environment'
+        }), 500
+    except Exception as e:
+        return jsonify({
+            'error': f'Analysis failed: {str(e)}'
+        }), 500
 
 
 @training_bp.route('/start', methods=['POST'])
@@ -166,35 +294,83 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         experiment.problem_type = problem_type
         db.session.commit()
         
-        # Handle categorical features
-        for col in X.select_dtypes(include=['object']).columns:
-            le = LabelEncoder()
-            X[col] = le.fit_transform(X[col].astype(str))
-        
-        # Fill missing values
-        X = X.fillna(X.median())
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+        # Use the module-level CombinedPreprocessor for pickle compatibility
+        preprocessor = CombinedPreprocessor()
+        X_scaled = preprocessor.fit_transform(X)
         
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
         
-        # Define models to try
+        # Define models to try - ALL AVAILABLE ALGORITHMS
         if problem_type == 'classification':
+            from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
+            from sklearn.svm import SVC
+            from sklearn.neighbors import KNeighborsClassifier
+            from sklearn.tree import DecisionTreeClassifier
+            
             models = [
-                ('Logistic Regression', LogisticRegression(max_iter=1000)),
-                ('Random Forest', RandomForestClassifier(n_estimators=100, random_state=42))
+                ('Logistic Regression', LogisticRegression(max_iter=1000, random_state=42)),
+                ('Random Forest', RandomForestClassifier(n_estimators=100, random_state=42)),
+                ('Gradient Boosting', GradientBoostingClassifier(n_estimators=100, random_state=42, max_depth=5)),
+                ('SVM', SVC(kernel='rbf', probability=True, random_state=42)),
+                ('KNN', KNeighborsClassifier(n_neighbors=5)),
+                ('Decision Tree', DecisionTreeClassifier(random_state=42, max_depth=10)),
+                ('AdaBoost', AdaBoostClassifier(n_estimators=100, random_state=42)),
+                ('Extra Trees', ExtraTreesClassifier(n_estimators=100, random_state=42)),
             ]
+            
+            # Add XGBoost if available
+            try:
+                from xgboost import XGBClassifier
+                models.append(('XGBoost', XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='logloss')))
+            except ImportError:
+                print("⚠️ XGBoost not available, skipping...", flush=True)
+            
+            # Add LightGBM if available
+            try:
+                from lightgbm import LGBMClassifier
+                models.append(('LightGBM', LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)))
+            except ImportError:
+                print("⚠️ LightGBM not available, skipping...", flush=True)
+            
             scoring = 'accuracy'
         else:
+            from sklearn.linear_model import Lasso, ElasticNet
+            from sklearn.ensemble import GradientBoostingRegressor, AdaBoostRegressor, ExtraTreesRegressor
+            from sklearn.svm import SVR
+            from sklearn.neighbors import KNeighborsRegressor
+            from sklearn.tree import DecisionTreeRegressor
+            
             models = [
                 ('Linear Regression', LinearRegression()),
-                ('Ridge Regression', Ridge()),
-                ('Random Forest', RandomForestRegressor(n_estimators=100, random_state=42))
+                ('Ridge Regression', Ridge(random_state=42)),
+                ('Lasso Regression', Lasso(random_state=42, max_iter=2000)),
+                ('ElasticNet', ElasticNet(random_state=42, max_iter=2000)),
+                ('Random Forest', RandomForestRegressor(n_estimators=100, random_state=42)),
+                ('Gradient Boosting', GradientBoostingRegressor(n_estimators=100, random_state=42, max_depth=5)),
+                ('SVR', SVR(kernel='rbf')),
+                ('KNN', KNeighborsRegressor(n_neighbors=5)),
+                ('Decision Tree', DecisionTreeRegressor(random_state=42, max_depth=10)),
+                ('AdaBoost', AdaBoostRegressor(n_estimators=100, random_state=42)),
+                ('Extra Trees', ExtraTreesRegressor(n_estimators=100, random_state=42)),
             ]
+            
+            # Add XGBoost if available
+            try:
+                from xgboost import XGBRegressor
+                models.append(('XGBoost', XGBRegressor(n_estimators=100, random_state=42)))
+            except ImportError:
+                print("⚠️ XGBoost not available, skipping...", flush=True)
+            
+            # Add LightGBM if available
+            try:
+                from lightgbm import LGBMRegressor
+                models.append(('LightGBM', LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)))
+            except ImportError:
+                print("⚠️ LightGBM not available, skipping...", flush=True)
+            
             scoring = 'r2'
+
         
         print(f"\n📊 Problem Type: {problem_type.upper()}")
         print(f"📈 Models to train: {len(models)}")
@@ -283,6 +459,75 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         print(f"   Best Model: {best_model_name}")
         print(f"   Best Score: {best_score:.4f}")
         print(f"{'='*60}\n")
+        
+        # Package the best model into a ZIP file
+        if best_model is not None:
+            try:
+                import tempfile
+                import sys
+                sys.path.insert(0, 'c:/Users/alok2/OneDrive/Desktop/Ahem_Hack')
+                from ml_engine.packaging.model_packager import ModelPackager, create_feature_schema
+                from app.services.minio_service import get_minio_service
+                
+                print("📦 Packaging model...", flush=True)
+                
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    packager = ModelPackager(tmp_dir)
+                    
+                    # Create feature schema from DataFrame
+                    feature_schema = create_feature_schema(df, target_column)
+                    
+                    # Prepare metadata
+                    metadata = {
+                        'name': experimentName if 'experimentName' in dir() else f"Model_{experiment.id}",
+                        'experiment_id': experiment.id,
+                        'problem_type': problem_type,
+                        'target_column': target_column,
+                        'best_model': best_model_name,
+                        'best_score': float(best_score),
+                        'training_results': all_results
+                    }
+                    
+                    # Create the package directory with all files
+                    package_dir = packager.package(
+                        model=best_model,
+                        preprocessor=preprocessor,  # The CombinedPreprocessor we created
+                        feature_schema=feature_schema,
+                        metadata=metadata,
+                        model_format='pkl'
+                    )
+                    
+                    # Create ZIP file
+                    zip_path = packager.create_zip(package_dir)
+                    print(f"📦 ZIP created: {zip_path}", flush=True)
+                    
+                    # Upload to MinIO
+                    minio_service = get_minio_service()
+                    zip_filename = f"user_{experiment.user_id}/experiment_{experiment.id}/model_package.zip"
+                    
+                    with open(zip_path, 'rb') as f:
+                        zip_content = f.read()
+                    
+                    minio_service.upload_bytes(
+                        bucket='models',
+                        object_name=zip_filename,
+                        data=zip_content,
+                        content_type='application/zip'
+                    )
+                    
+                    # Update experiment with model path
+                    # Need to copy and update to trigger SQLAlchemy change detection
+                    updated_results = dict(experiment.results or {})
+                    updated_results['model_package_path'] = zip_filename
+                    experiment.results = updated_results
+                    db.session.commit()
+                    
+                    print(f"✅ Model package uploaded: {zip_filename}", flush=True)
+                    
+            except Exception as pack_error:
+                print(f"⚠️ Model packaging failed: {pack_error}", flush=True)
+                import traceback
+                traceback.print_exc()
         
     except Exception as e:
         experiment.status = 'failed'

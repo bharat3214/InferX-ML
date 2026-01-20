@@ -1,18 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { useState } from 'react'
 import {
     Box,
     Download,
     Trash2,
     TrendingUp,
     Clock,
-    BarChart3
+    BarChart3,
+    Loader2
 } from 'lucide-react'
 import { modelsApi } from '../services/api'
 import './Models.css'
 
 export default function Models() {
     const queryClient = useQueryClient()
+    const [downloadingId, setDownloadingId] = useState(null)
 
     const { data, isLoading } = useQuery({
         queryKey: ['models'],
@@ -25,8 +28,35 @@ export default function Models() {
         mutationFn: (id) => modelsApi.delete(id),
         onSuccess: () => {
             queryClient.invalidateQueries(['models'])
+        },
+        onError: (error) => {
+            console.error('Delete failed:', error)
+            alert('Failed to delete model. Please try again.')
         }
     })
+
+    const handleDownload = async (modelId, modelName) => {
+        setDownloadingId(modelId)
+        try {
+            const response = await modelsApi.download(modelId)
+
+            // Create blob and download
+            const blob = new Blob([response.data], { type: 'application/zip' })
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `${modelName.replace(/\s+/g, '_')}_model.zip`
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+        } catch (error) {
+            console.error('Download failed:', error)
+            alert('Download failed. Model package may not be available.')
+        } finally {
+            setDownloadingId(null)
+        }
+    }
 
     const getProblemTypeIcon = (type) => {
         if (type?.includes('classification')) return '🎯'
@@ -95,14 +125,22 @@ export default function Models() {
                                 </Link>
                                 <button
                                     className="btn btn-secondary"
-                                    onClick={() => {/* TODO: Download */ }}
+                                    onClick={() => handleDownload(model.id, model.name)}
+                                    disabled={downloadingId === model.id || !model.has_package}
+                                    title={!model.has_package ? 'Package not available. Train a new model to enable downloads.' : 'Download model package'}
                                 >
-                                    <Download size={16} />
+                                    {downloadingId === model.id ? (
+                                        <Loader2 size={16} className="spin" />
+                                    ) : (
+                                        <Download size={16} />
+                                    )}
+                                    {downloadingId === model.id ? 'Downloading...' : 'Download'}
                                 </button>
                                 <button
                                     className="btn btn-secondary btn-danger"
+                                    disabled={deleteMutation.isPending}
                                     onClick={() => {
-                                        if (confirm('Delete this model?')) {
+                                        if (window.confirm('Delete this model?')) {
                                             deleteMutation.mutate(model.id)
                                         }
                                     }}
