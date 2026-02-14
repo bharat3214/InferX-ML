@@ -400,6 +400,11 @@ class ExplanationEngine:
             data['progress'] = 100
             
             experiment.explanation_data = data
+            
+            # Force SQLAlchemy to detect the JSON change
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(experiment, 'explanation_data')
+            
             db.session.commit()
             
         except Exception as e:
@@ -449,6 +454,10 @@ class ExplanationEngine:
     @classmethod
     def _calculate_progress(cls, data):
         """Calculate overall progress percentage based on phases"""
+        # If summary exists, training is 100% complete
+        if data.get('summary'):
+            return 100
+        
         total_phases = 6  # understanding, learning, testing, comparing, choosing, ready
         completed_phases = sum(1 for p in data.get('phases', []) if p.get('completed_at'))
         

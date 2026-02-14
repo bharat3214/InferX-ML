@@ -11,7 +11,14 @@ import {
     Sparkles,
     Wand2,
     Brain,
-    ChevronDown
+    ChevronDown,
+    Database,
+    Crosshair,
+    Zap,
+    BarChart3,
+    ArrowRight,
+    Layers,
+    FlaskConical
 } from 'lucide-react'
 import { datasetsApi, trainingApi } from '../services/api'
 import LearningTimeline from '../components/LearningTimeline'
@@ -159,34 +166,127 @@ export default function Training() {
         }
     }, [thinkingMessages])
 
+    const steps = [
+        {
+            icon: <Database size={22} />,
+            number: '01',
+            title: 'Select Dataset',
+            desc: 'Choose the dataset you want to train on'
+        },
+        {
+            icon: <Crosshair size={22} />,
+            number: '02',
+            title: 'Choose Target',
+            desc: 'Pick the column you want to predict'
+        },
+        {
+            icon: <Zap size={22} />,
+            number: '03',
+            title: 'AutoML Training',
+            desc: 'We automatically select & train the best model'
+        },
+        {
+            icon: <BarChart3 size={22} />,
+            number: '04',
+            title: 'Get Results',
+            desc: 'Review metrics and start making predictions'
+        }
+    ]
+
 
     return (
         <div className="training-page">
-            <div className="page-header">
-                <h1>Model Training</h1>
-                <p>Train machine learning models with AutoML</p>
+            {/* ── Hero Header ── */}
+            <div className="training-hero">
+                <div className="hero-glow" />
+                <div className="hero-content">
+                    <div className="hero-badge">
+                        <Cpu size={14} />
+                        <span>AutoML Engine</span>
+                    </div>
+                    <h1>Model Training</h1>
+                    <p className="hero-subtitle">
+                        Train machine learning models automatically — no code required.
+                        Our AutoML engine tests multiple algorithms and picks the best one for your data.
+                    </p>
+                </div>
             </div>
 
-            <div className="training-layout">
-                {/* Configuration Panel */}
-                <div className="config-panel card">
-                    <h2>Training Configuration</h2>
+            {/* ── Section 1: How It Works ── */}
+            <section className="how-it-works-section">
+                <div className="section-label">
+                    <Layers size={16} />
+                    <span>How It Works</span>
+                </div>
+                <div className="steps-grid">
+                    {steps.map((step, idx) => (
+                        <div className="step-card" key={idx}>
+                            <div className="step-card-top">
+                                <span className="step-number-badge">{step.number}</span>
+                                <div className="step-icon-wrap">{step.icon}</div>
+                            </div>
+                            <h4>{step.title}</h4>
+                            <p>{step.desc}</p>
+                            {idx < steps.length - 1 && (
+                                <div className="step-connector">
+                                    <ArrowRight size={16} />
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </section>
 
-                    <div className="form-group">
-                        <label className="label">Dataset</label>
-                        <select
-                            className="input"
-                            value={selectedDataset}
-                            onChange={(e) => setSelectedDataset(e.target.value)}
-                            disabled={isTraining}
-                        >
-                            <option value="">Select a dataset...</option>
-                            {datasets.map((dataset) => (
-                                <option key={dataset.id} value={dataset.id}>
-                                    {dataset.name} ({dataset.num_rows?.toLocaleString()} rows)
-                                </option>
-                            ))}
-                        </select>
+            {/* ── Section 2: Training Configuration ── */}
+            <section className="config-section">
+                <div className="section-label">
+                    <FlaskConical size={16} />
+                    <span>Training Configuration</span>
+                </div>
+
+                <div className="config-card card">
+                    {/* Row 1: Dataset + Target */}
+                    <div className="config-row">
+                        <div className="form-group config-field">
+                            <label className="label">
+                                <Database size={15} />
+                                Dataset
+                            </label>
+                            <select
+                                className="input"
+                                value={selectedDataset}
+                                onChange={(e) => setSelectedDataset(e.target.value)}
+                                disabled={isTraining}
+                            >
+                                <option value="">Select a dataset...</option>
+                                {datasets.map((dataset) => (
+                                    <option key={dataset.id} value={dataset.id}>
+                                        {dataset.name} ({dataset.num_rows?.toLocaleString()} rows)
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {selectedDataset && columns.length > 0 && (
+                            <div className="form-group config-field">
+                                <label className="label">
+                                    <Target size={15} />
+                                    Target Column
+                                </label>
+                                <select
+                                    className="input"
+                                    value={targetColumn}
+                                    onChange={(e) => setTargetColumn(e.target.value)}
+                                    disabled={isTraining}
+                                >
+                                    <option value="">Select target column...</option>
+                                    {columns.map((col) => (
+                                        <option key={col} value={col}>{col}</option>
+                                    ))}
+                                </select>
+                                <p className="form-hint">The column you want to predict</p>
+                            </div>
+                        )}
                     </div>
 
                     {/* AI Goal Analysis Section */}
@@ -194,7 +294,7 @@ export default function Training() {
                         <div className="ai-analysis-section">
                             <div className="form-group">
                                 <label className="label">
-                                    <Sparkles size={16} />
+                                    <Sparkles size={15} />
                                     Describe Your Goal (AI-Powered)
                                 </label>
                                 <div className="ai-input-row">
@@ -273,51 +373,31 @@ export default function Training() {
                         </div>
                     )}
 
-                    {selectedDataset && columns.length > 0 && (
-                        <div className="form-group">
-                            <label className="label">
-                                <Target size={16} />
-                                Target Column
-                            </label>
-                            <select
+                    {/* Row 2: Experiment Name + Goal */}
+                    <div className="config-row">
+                        <div className="form-group config-field">
+                            <label className="label">Experiment Name (Optional)</label>
+                            <input
+                                type="text"
                                 className="input"
-                                value={targetColumn}
-                                onChange={(e) => setTargetColumn(e.target.value)}
+                                value={experimentName}
+                                onChange={(e) => setExperimentName(e.target.value)}
+                                placeholder="My Experiment"
                                 disabled={isTraining}
-                            >
-                                <option value="">Select target column...</option>
-                                {columns.map((col) => (
-                                    <option key={col} value={col}>{col}</option>
-                                ))}
-                            </select>
-                            <p className="form-hint">
-                                The column you want to predict
-                            </p>
+                            />
                         </div>
-                    )}
 
-                    <div className="form-group">
-                        <label className="label">Experiment Name (Optional)</label>
-                        <input
-                            type="text"
-                            className="input"
-                            value={experimentName}
-                            onChange={(e) => setExperimentName(e.target.value)}
-                            placeholder="My Experiment"
-                            disabled={isTraining}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="label">Goal Description (Optional)</label>
-                        <textarea
-                            className="input textarea"
-                            value={goalDescription}
-                            onChange={(e) => setGoalDescription(e.target.value)}
-                            placeholder="Describe what you want to predict..."
-                            rows={3}
-                            disabled={isTraining}
-                        />
+                        <div className="form-group config-field">
+                            <label className="label">Goal Description (Optional)</label>
+                            <textarea
+                                className="input textarea"
+                                value={goalDescription}
+                                onChange={(e) => setGoalDescription(e.target.value)}
+                                placeholder="Describe what you want to predict..."
+                                rows={2}
+                                disabled={isTraining}
+                            />
+                        </div>
                     </div>
 
                     <button
@@ -328,7 +408,7 @@ export default function Training() {
                         {isTraining ? (
                             <>
                                 <div className="spinner" style={{ width: 18, height: 18 }}></div>
-                                Training...
+                                Training in Progress...
                             </>
                         ) : (
                             <>
@@ -338,124 +418,105 @@ export default function Training() {
                         )}
                     </button>
                 </div>
+            </section>
 
-                {/* Training Progress / Info Panel */}
-                <div className="info-panel">
-                    {currentJob ? (
-                        <div className="progress-card card">
-                            <div className="progress-header">
-                                <Cpu size={24} className="text-primary" />
-                                <div>
-                                    <h3>{currentJob.name}</h3>
-                                    <p className={`status-badge ${statusData?.data?.experiment?.status}`}>
-                                        Status: {statusData?.data?.experiment?.status || 'Starting...'}
-                                    </p>
-                                </div>
+            {/* ── Section 3: Training Progress & Explanation ── */}
+            {currentJob && (
+                <section className="explanation-section">
+                    <div className="section-label">
+                        <Brain size={16} />
+                        <span>What the Model is Doing</span>
+                    </div>
+
+                    <div className="explanation-card card">
+                        {/* Status Header */}
+                        <div className="progress-header">
+                            <Cpu size={24} className="text-primary" />
+                            <div>
+                                <h3>{currentJob.name}</h3>
+                                <p className={`status-badge ${statusData?.data?.experiment?.status}`}>
+                                    Status: {statusData?.data?.experiment?.status || 'Starting...'}
+                                </p>
                             </div>
+                        </div>
 
-                            <div className="progress-steps">
-                                <div className={`step ${['training', 'completed'].includes(statusData?.data?.experiment?.status) ? 'completed' : ''}`}>
-                                    <CheckCircle size={20} />
-                                    <span>Preprocessing</span>
+                        {/* Pipeline Steps */}
+                        <div className="pipeline-steps">
+                            <div className={`pipeline-step ${['training', 'completed'].includes(statusData?.data?.experiment?.status) ? 'completed' : 'active'}`}>
+                                <div className="pipeline-dot">
+                                    <CheckCircle size={18} />
                                 </div>
-                                <div className={`step ${statusData?.data?.experiment?.status === 'training' ? 'active' : statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
-                                    <Clock size={20} className={statusData?.data?.experiment?.status === 'training' ? 'animate-pulse' : ''} />
-                                    <span>Training</span>
-                                </div>
-                                <div className={`step ${statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
-                                    <div className="step-dot"></div>
-                                    <span>Evaluation</span>
-                                </div>
+                                <span>Preprocessing</span>
                             </div>
-
-                            {/* Learning Timeline - Human Friendly UI */}
-                            <LearningTimeline 
-                                explanationData={explanationData}
-                                isTraining={isTraining}
-                            />
-
-                            {/* Collapsible Build Logs Terminal (Developer Option) */}
-                            <div className="logs-terminal-collapsible">
-                                <div 
-                                    className="terminal-header-toggle"
-                                    onClick={() => setShowBuildLogs(!showBuildLogs)}
-                                >
-                                    <span>🔧 Developer Logs</span>
-                                    <ChevronDown 
-                                        size={16} 
-                                        className={`toggle-icon ${showBuildLogs ? 'open' : ''}`} 
-                                    />
+                            <div className="pipeline-line" />
+                            <div className={`pipeline-step ${statusData?.data?.experiment?.status === 'training' ? 'active' : statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
+                                <div className="pipeline-dot">
+                                    <Clock size={18} className={statusData?.data?.experiment?.status === 'training' ? 'animate-pulse' : ''} />
                                 </div>
-                                {showBuildLogs && (
-                                    <pre className="terminal-content">
-                                        {combinedLogs || 'Waiting for logs...'}
-                                        <div ref={logsEndRef} />
-                                    </pre>
-                                )}
+                                <span>Training</span>
                             </div>
-
-                            {/* Training Success - Displayed After Logs */}
-                            {statusData?.data?.experiment?.status === 'completed' && (
-                                <div className="success-message">
-                                    <CheckCircle size={24} className="text-success" />
-                                    <h3>Training Success!</h3>
-
-                                    {statusData.data.experiment.best_model_name && (
-                                        <div className="result-summary">
-                                            <div className="result-item">
-                                                <span className="result-label">🏆 Best Model</span>
-                                                <span className="result-value">{statusData.data.experiment.best_model_name}</span>
-                                            </div>
-                                            <div className="result-item">
-                                                <span className="result-label">📊 Score</span>
-                                                <span className="result-value">
-                                                    {(statusData.data.experiment.best_score * 100).toFixed(2)}%
-                                                </span>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <a href="/models" className="btn btn-sm btn-outline">View Models</a>
+                            <div className="pipeline-line" />
+                            <div className={`pipeline-step ${statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
+                                <div className="pipeline-dot">
+                                    <BarChart3 size={18} />
                                 </div>
+                                <span>Evaluation</span>
+                            </div>
+                        </div>
+
+                        {/* Learning Timeline — Human Friendly UI */}
+                        <LearningTimeline 
+                            explanationData={explanationData}
+                            isTraining={isTraining}
+                        />
+
+                        {/* Collapsible Build Logs Terminal (Developer Option) */}
+                        <div className="logs-terminal-collapsible">
+                            <div 
+                                className="terminal-header-toggle"
+                                onClick={() => setShowBuildLogs(!showBuildLogs)}
+                            >
+                                <span>🔧 Developer Logs</span>
+                                <ChevronDown 
+                                    size={16} 
+                                    className={`toggle-icon ${showBuildLogs ? 'open' : ''}`} 
+                                />
+                            </div>
+                            {showBuildLogs && (
+                                <pre className="terminal-content">
+                                    {combinedLogs || 'Waiting for logs...'}
+                                    <div ref={logsEndRef} />
+                                </pre>
                             )}
                         </div>
-                    ) : (
-                        <div className="info-card card">
-                            <h3>How it works</h3>
-                            <div className="info-steps">
-                                <div className="info-step">
-                                    <div className="step-number">1</div>
-                                    <div>
-                                        <h4>Select Dataset</h4>
-                                        <p>Choose the dataset you want to train on</p>
+
+                        {/* Training Success */}
+                        {statusData?.data?.experiment?.status === 'completed' && (
+                            <div className="success-message">
+                                <CheckCircle size={24} className="text-success" />
+                                <h3>Training Complete!</h3>
+
+                                {statusData.data.experiment.best_model_name && (
+                                    <div className="result-summary">
+                                        <div className="result-item">
+                                            <span className="result-label">🏆 Best Model</span>
+                                            <span className="result-value">{statusData.data.experiment.best_model_name}</span>
+                                        </div>
+                                        <div className="result-item">
+                                            <span className="result-label">📊 Score</span>
+                                            <span className="result-value">
+                                                {(statusData.data.experiment.best_score * 100).toFixed(2)}%
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="info-step">
-                                    <div className="step-number">2</div>
-                                    <div>
-                                        <h4>Choose Target</h4>
-                                        <p>Select the column you want to predict</p>
-                                    </div>
-                                </div>
-                                <div className="info-step">
-                                    <div className="step-number">3</div>
-                                    <div>
-                                        <h4>AutoML Training</h4>
-                                        <p>We automatically select and train the best model</p>
-                                    </div>
-                                </div>
-                                <div className="info-step">
-                                    <div className="step-number">4</div>
-                                    <div>
-                                        <h4>Get Results</h4>
-                                        <p>Review metrics and start making predictions</p>
-                                    </div>
-                                </div>
+                                )}
+
+                                <a href="/models" className="btn btn-sm btn-outline">View Models</a>
                             </div>
-                        </div>
-                    )}
-                </div>
-            </div>
+                        )}
+                    </div>
+                </section>
+            )}
         </div>
     )
 }

@@ -122,7 +122,11 @@ def analyze_with_prompt():
         if not file_content:
             return jsonify({'error': 'Could not load dataset'}), 500
         
-        df = pd.read_csv(io.BytesIO(file_content))
+        # Support both CSV and Excel files
+        if dataset.file_path.lower().endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(file_content))
+        else:
+            df = pd.read_csv(io.BytesIO(file_content))
         
         # Prepare data for Gemini
         columns = list(df.columns)
@@ -285,7 +289,11 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                 raise Exception("File content is empty or None")
                 
             print(f"📦 Downloaded {len(file_content)} bytes")
-            df = pd.read_csv(io.BytesIO(file_content))
+            # Support both CSV and Excel files
+            if file_path.lower().endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(io.BytesIO(file_content))
+            else:
+                df = pd.read_csv(io.BytesIO(file_content))
             print(f"📊 DataFrame loaded: {df.shape}")
             _update_thinking_log(experiment, f"✅ Dataset loaded successfully: {df.shape[0]:,} rows × {df.shape[1]} columns")
             
