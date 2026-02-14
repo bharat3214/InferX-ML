@@ -68,6 +68,7 @@ class Experiment(db.Model):
             'explanation_data': self.explanation_data or {},
             'created_at': self.created_at.isoformat(),
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'results': results,
             'has_package': bool(results.get('model_package_path'))
         }
     
