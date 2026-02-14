@@ -9,9 +9,12 @@ import {
     Clock,
     AlertCircle,
     Sparkles,
-    Wand2
+    Wand2,
+    Brain,
+    ChevronDown
 } from 'lucide-react'
 import { datasetsApi, trainingApi } from '../services/api'
+import LearningTimeline from '../components/LearningTimeline'
 import './Training.css'
 
 export default function Training() {
@@ -26,6 +29,7 @@ export default function Training() {
     const [isTraining, setIsTraining] = useState(false)
     const [currentJob, setCurrentJob] = useState(null)
     const logsEndRef = useRef(null)
+    const thinkingEndRef = useRef(null)
 
     // AI Prompt Analysis State
     const [aiPrompt, setAiPrompt] = useState('')
@@ -66,6 +70,22 @@ export default function Training() {
         enabled: !!currentJob,
         refetchInterval: isTraining ? 2000 : false
     })
+
+    // Polling for thinking logs
+    const { data: thinkingData } = useQuery({
+        queryKey: ['training-thinking', currentJob?.id],
+        queryFn: () => trainingApi.getThinkingLogs(currentJob.id),
+        enabled: !!currentJob,
+        refetchInterval: isTraining ? 1500 : false
+    })
+
+    const thinkingMessages = thinkingData?.data?.thinking_logs || []
+
+    // Get explanation data from status response
+    const explanationData = statusData?.data?.experiment?.explanation_data || null
+    
+    // State for build logs visibility
+    const [showBuildLogs, setShowBuildLogs] = useState(false)
 
     const startTrainingMutation = useMutation({
         mutationFn: (data) => trainingApi.start(data),
@@ -131,6 +151,13 @@ export default function Training() {
             logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
         }
     }, [combinedLogs])
+
+    // Auto-scroll thinking panel
+    useEffect(() => {
+        if (thinkingEndRef.current) {
+            thinkingEndRef.current.scrollIntoView({ behavior: 'smooth' })
+        }
+    }, [thinkingMessages])
 
 
     return (
@@ -310,30 +337,6 @@ export default function Training() {
                             </>
                         )}
                     </button>
-
-                    {statusData?.data?.experiment?.status === 'completed' && (
-                        <div className="success-message">
-                            <CheckCircle size={24} className="text-success" />
-                            <h3>Training Success!</h3>
-
-                            {statusData.data.experiment.best_model_name && (
-                                <div className="result-summary">
-                                    <div className="result-item">
-                                        <span className="result-label">🏆 Best Model</span>
-                                        <span className="result-value">{statusData.data.experiment.best_model_name}</span>
-                                    </div>
-                                    <div className="result-item">
-                                        <span className="result-label">📊 Score</span>
-                                        <span className="result-value">
-                                            {(statusData.data.experiment.best_score * 100).toFixed(2)}%
-                                        </span>
-                                    </div>
-                                </div>
-                            )}
-
-                            <a href="/models" className="btn btn-sm btn-outline">View Models</a>
-                        </div>
-                    )}
                 </div>
 
                 {/* Training Progress / Info Panel */}
@@ -365,16 +368,56 @@ export default function Training() {
                                 </div>
                             </div>
 
-                            {/* Live Logs Terminal */}
-                            <div className="logs-terminal">
-                                <div className="terminal-header">
-                                    <span>Build Logs</span>
+                            {/* Learning Timeline - Human Friendly UI */}
+                            <LearningTimeline 
+                                explanationData={explanationData}
+                                isTraining={isTraining}
+                            />
+
+                            {/* Collapsible Build Logs Terminal (Developer Option) */}
+                            <div className="logs-terminal-collapsible">
+                                <div 
+                                    className="terminal-header-toggle"
+                                    onClick={() => setShowBuildLogs(!showBuildLogs)}
+                                >
+                                    <span>🔧 Developer Logs</span>
+                                    <ChevronDown 
+                                        size={16} 
+                                        className={`toggle-icon ${showBuildLogs ? 'open' : ''}`} 
+                                    />
                                 </div>
-                                <pre className="terminal-content">
-                                    {combinedLogs || 'Waiting for logs...'}
-                                    <div ref={logsEndRef} />
-                                </pre>
+                                {showBuildLogs && (
+                                    <pre className="terminal-content">
+                                        {combinedLogs || 'Waiting for logs...'}
+                                        <div ref={logsEndRef} />
+                                    </pre>
+                                )}
                             </div>
+
+                            {/* Training Success - Displayed After Logs */}
+                            {statusData?.data?.experiment?.status === 'completed' && (
+                                <div className="success-message">
+                                    <CheckCircle size={24} className="text-success" />
+                                    <h3>Training Success!</h3>
+
+                                    {statusData.data.experiment.best_model_name && (
+                                        <div className="result-summary">
+                                            <div className="result-item">
+                                                <span className="result-label">🏆 Best Model</span>
+                                                <span className="result-value">{statusData.data.experiment.best_model_name}</span>
+                                            </div>
+                                            <div className="result-item">
+                                                <span className="result-label">📊 Score</span>
+                                                <span className="result-value">
+                                                    {(statusData.data.experiment.best_score * 100).toFixed(2)}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <a href="/models" className="btn btn-sm btn-outline">View Models</a>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="info-card card">

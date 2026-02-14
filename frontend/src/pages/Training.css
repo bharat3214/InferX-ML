@@ -3,14 +3,16 @@
 }
 
 .training-layout {
-    display: grid;
-    grid-template-columns: 400px 1fr;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-6);
+    max-width: 900px;
+    margin: 0 auto;
 }
 
 /* Config Panel */
 .config-panel {
-    height: fit-content;
+    width: 100%;
 }
 
 .config-panel h2 {
@@ -442,4 +444,199 @@
     border-radius: var(--radius-md);
     color: var(--color-error);
     font-size: 0.875rem;
+}
+
+/* AI Thinking Panel */
+.thinking-container {
+    margin-top: var(--space-4);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.03) 0%, rgba(168, 85, 247, 0.03) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    position: relative;
+}
+
+.thinking-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary), var(--color-primary));
+    background-size: 200% 100%;
+    animation: gradientMove 2s ease-in-out infinite;
+}
+
+@keyframes gradientMove {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+
+.thinking-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+    border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-primary-light);
+}
+
+.thinking-icon {
+    color: var(--color-primary);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.thinking-dots {
+    display: flex;
+    gap: 4px;
+    margin-left: var(--space-2);
+}
+
+.thinking-dots .dot {
+    width: 6px;
+    height: 6px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    animation: bounce 1.4s ease-in-out infinite;
+}
+
+.thinking-dots .dot:nth-child(1) { animation-delay: 0s; }
+.thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+    0%, 80%, 100% { 
+        transform: translateY(0);
+        opacity: 0.5;
+    }
+    40% { 
+        transform: translateY(-6px);
+        opacity: 1;
+    }
+}
+
+.thinking-messages {
+    padding: var(--space-3) var(--space-4);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.thinking-message {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    animation: fadeIn 0.3s ease-out forwards;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+.thinking-message:last-of-type {
+    border-bottom: none;
+}
+
+.thinking-message.active {
+    opacity: 1;
+}
+
+.thinking-message.active .message-text {
+    color: var(--color-white);
+    font-weight: 500;
+}
+
+.thinking-message.initial {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    to {
+        opacity: 0.7;
+    }
+}
+
+.thinking-message.active {
+    animation: fadeInActive 0.3s ease-out forwards;
+}
+
+@keyframes fadeInActive {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.message-timestamp {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--color-gray-500);
+    font-family: 'Fira Code', 'Roboto Mono', monospace;
+    min-width: 70px;
+}
+
+.message-text {
+    font-size: 0.875rem;
+    color: var(--color-gray-300);
+    line-height: 1.5;
+}
+
+/* Collapsible Developer Logs */
+.logs-terminal-collapsible {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    margin-top: var(--space-3);
+    overflow: hidden;
+}
+
+.terminal-header-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    background: rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--color-gray-500);
+    transition: all 0.2s ease;
+}
+
+.terminal-header-toggle:hover {
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--color-gray-400);
+}
+
+.toggle-icon {
+    transition: transform 0.3s ease;
+}
+
+.toggle-icon.open {
+    transform: rotate(180deg);
+}
+
+.logs-terminal-collapsible .terminal-content {
+    max-height: 200px;
+    padding: var(--space-3);
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
 }

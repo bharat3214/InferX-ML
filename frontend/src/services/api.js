@@ -64,6 +64,7 @@ export const trainingApi = {
     start: (data) => api.post('/training/start', data),
     getStatus: (jobId) => api.get(`/training/${jobId}/status`),
     getLogs: (jobId) => api.get(`/training/${jobId}/logs`),
+    getThinkingLogs: (jobId) => api.get(`/training/${jobId}/thinking`),
     cancel: (jobId) => api.post(`/training/${jobId}/cancel`),
     analyzePrompt: (datasetId, prompt) => api.post('/training/analyze-prompt', { dataset_id: datasetId, prompt })
 }
