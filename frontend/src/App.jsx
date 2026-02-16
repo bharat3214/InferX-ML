@@ -6,6 +6,7 @@ import Datasets from './pages/Datasets'
 import Training from './pages/Training'
 import Models from './pages/Models'
 import Predictions from './pages/Predictions'
+import AppBuilder from './pages/AppBuilder'
 import Login from './pages/Login'
 import { useAuthStore } from './store/authStore'
 
@@ -41,6 +42,7 @@ function App() {
                                 <Route path="/training" element={<Training />} />
                                 <Route path="/models" element={<Models />} />
                                 <Route path="/predictions/:modelId?" element={<Predictions />} />
+                                <Route path="/app-builder" element={<AppBuilder />} />
                             </Routes>
                         </Layout>
                     ) : (

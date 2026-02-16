@@ -70,6 +70,7 @@ services:
     volumes:
       - ./backend:/app
       - ./ml_engine:/app/ml_engine
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,3 +135,6 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  generated_apps:
+
+

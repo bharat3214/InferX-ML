@@ -7,7 +7,8 @@ import {
     Sparkles,
     LogOut,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    Rocket
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
@@ -19,6 +20,7 @@ const navItems = [
     { path: '/training', icon: Cpu, label: 'Training' },
     { path: '/models', icon: Box, label: 'Models' },
     { path: '/predictions', icon: Sparkles, label: 'Predictions' },
+    { path: '/app-builder', icon: Rocket, label: 'App Builder' },
 ]
 
 export default function Layout({ children }) {

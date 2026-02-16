@@ -342,6 +342,14 @@ InferX-ML/
 - [ ] Documentation
 - [ ] Demo videos
 
+### Phase 8: AI App Builder (Week 15-16)
+- [ ] Integrate **anomalyco/opencode** agent
+- [ ] Create Sandboxed environment (Docker) for agent execution
+- [ ] Implement "Text-to-App" UI (users describe app needs)
+- [ ] Backend service to route prompts to opencode agent
+- [ ] Deployment pipeline for generated frontend+backend apps
+- [ ] Zip download or live preview of generated apps
+
 ---
 
 ## 📐 API Endpoints
@@ -386,6 +394,14 @@ InferX-ML/
 | POST | `/api/predict/{model_id}` | Single prediction |
 | POST | `/api/predict/{model_id}/batch` | Batch prediction (file) |
 | GET | `/api/predict/{model_id}/explain` | Get prediction explanation |
+
+### AI App Builder
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/builder/generate` | Generate full app from prompt |
+| GET | `/api/builder/{project_id}/status` | Check generation progress |
+| GET | `/api/builder/{project_id}/download` | Download generated code |
+| POST | `/api/builder/{project_id}/deploy` | Deploy generated app |
 
 
 ---
