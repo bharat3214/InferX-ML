@@ -1,17 +1,17 @@
 /* InferX-ML Global Styles */
 
 :root {
-    /* Colors - Monochrome Theme */
-    --color-primary: #6b7280;
-    --color-primary-dark: #4b5563;
-    --color-primary-light: #9ca3af;
-    --color-secondary: #9ca3af;
-    --color-accent: #d1d5db;
+    /* Colors - Emerald Accent Theme */
+    --color-primary: #10b981;
+    --color-primary-dark: #059669;
+    --color-primary-light: #34d399;
+    --color-secondary: #14b8a6;
+    --color-accent: #a7f3d0;
 
     --color-success: #10b981;
     --color-warning: #f59e0b;
     --color-error: #ef4444;
-    --color-info: #6b7280;
+    --color-info: #2dd4bf;
 
     --color-gray-50: #f9fafb;
     --color-gray-100: #f3f4f6;
@@ -155,7 +155,7 @@ a:hover {
 .card-hover:hover {
     border-color: var(--color-primary-light);
     transform: translateY(-2px);
-    box-shadow: 0 0 20px rgba(156, 163, 175, 0.15);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
 }
 
 /* Form Elements */
@@ -173,7 +173,7 @@ a:hover {
 .input:focus {
     outline: none;
     border-color: var(--color-primary-light);
-    box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.2);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
 }
 
 .input::placeholder {
@@ -408,6 +408,6 @@ a:hover {
 }
 
 .badge-info {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(45, 212, 191, 0.2);
     color: var(--color-info);
 }

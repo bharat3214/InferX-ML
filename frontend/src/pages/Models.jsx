@@ -45,7 +45,7 @@ function MiniBarChart({ data, width = 220, height = 100 }) {
                             width={barW}
                             height={barH}
                             rx={4}
-                            fill={isBest ? 'url(#bestGrad)' : 'rgba(99,102,241,0.35)'}
+                            fill={isBest ? 'url(#bestGrad)' : 'rgba(16,185,129,0.35)'}
                             className="bar-rect"
                         />
                         <text
@@ -62,8 +62,8 @@ function MiniBarChart({ data, width = 220, height = 100 }) {
             })}
             <defs>
                 <linearGradient id="bestGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#818cf8" />
-                    <stop offset="100%" stopColor="#6366f1" />
+                    <stop offset="0%" stopColor="#34d399" />
+                    <stop offset="100%" stopColor="#10b981" />
                 </linearGradient>
             </defs>
         </svg>
@@ -79,16 +79,16 @@ function ScoreRing({ score, size = 64 }) {
     const color = pct >= 80 ? '#10b981' : pct >= 60 ? '#f59e0b' : '#ef4444'
     return (
         <svg width={size} height={size} className="score-ring">
-            <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
+            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
             <circle
-                cx={size/2} cy={size/2} r={r} fill="none"
+                cx={size / 2} cy={size / 2} r={r} fill="none"
                 stroke={color} strokeWidth={5}
                 strokeDasharray={circ} strokeDashoffset={offset}
                 strokeLinecap="round"
-                transform={`rotate(-90 ${size/2} ${size/2})`}
+                transform={`rotate(-90 ${size / 2} ${size / 2})`}
                 style={{ transition: 'stroke-dashoffset 1s ease' }}
             />
-            <text x={size/2} y={size/2 + 1} textAnchor="middle" dominantBaseline="middle"
+            <text x={size / 2} y={size / 2 + 1} textAnchor="middle" dominantBaseline="middle"
                 fontSize={size > 50 ? 14 : 11} fontWeight={700} fill="#e5e7eb">
                 {pct.toFixed(0)}%
             </text>
@@ -145,9 +145,9 @@ function AnalysisModal({ model, onClose, onDelete }) {
                             <p className="analysis-subtitle">{model.name}</p>
                         </div>
                     </div>
-                   <div className="analysis-header-actions">
+                    <div className="analysis-header-actions">
                         {onDelete && (
-                            <button 
+                            <button
                                 className="btn-icon btn-danger-icon"
                                 onClick={() => {
                                     if (window.confirm('Are you sure you want to delete this model? This action cannot be undone.')) {
@@ -163,7 +163,7 @@ function AnalysisModal({ model, onClose, onDelete }) {
                         <button className="close-btn" onClick={onClose}>
                             <X size={20} />
                         </button>
-                   </div>
+                    </div>
                 </div>
 
                 <div className="analysis-body">
@@ -509,10 +509,10 @@ export default function Models() {
                                                 justifyContent: 'center',
                                                 gap: '6px',
                                                 padding: '8px 12px',
-                                                background: 'rgba(99,102,241,0.12)',
-                                                border: '1px solid rgba(99,102,241,0.35)',
+                                                background: 'rgba(16,185,129,0.12)',
+                                                border: '1px solid rgba(16,185,129,0.35)',
                                                 borderRadius: '8px',
-                                                color: '#a5b4fc',
+                                                color: '#6ee7b7',
                                                 fontSize: '0.82rem',
                                                 fontWeight: 600,
                                                 cursor: 'pointer'
@@ -530,7 +530,7 @@ export default function Models() {
                                                 justifyContent: 'center',
                                                 gap: '6px',
                                                 padding: '8px 12px',
-                                                background: 'linear-gradient(135deg, #4f46e5, #7c3aed)',
+                                                background: 'linear-gradient(135deg, #059669, #14b8a6)',
                                                 border: 'none',
                                                 borderRadius: '8px',
                                                 color: '#fff',

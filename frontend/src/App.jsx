@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import Layout from './components/Layout'
+import LandingPage from './pages/LandingPage'
 import Dashboard from './pages/Dashboard'
 import Datasets from './pages/Datasets'
 import Training from './pages/Training'
@@ -28,8 +29,11 @@ function App() {
 
     return (
         <Routes>
+            {/* Public routes */}
+            <Route path="/landing" element={!isAuthenticated ? <LandingPage /> : <Navigate to="/" />} />
             <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
 
+            {/* Protected routes */}
             <Route
                 path="/*"
                 element={
@@ -44,7 +48,7 @@ function App() {
                             </Routes>
                         </Layout>
                     ) : (
-                        <Navigate to="/login" />
+                        <Navigate to="/landing" />
                     )
                 }
             />
