@@ -66,6 +66,23 @@ class CombinedPreprocessor:
         return self.scaler.transform(X_processed)
 
 
+def _update_thinking_log(experiment, message):
+    """Helper to append a thinking log message with timestamp"""
+    try:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}\n"
+        
+        # Append to existing thinking_logs
+        current_logs = experiment.thinking_logs or ''
+        experiment.thinking_logs = current_logs + log_entry
+        db.session.commit()
+        print(f"💭 {message}", flush=True)
+    except Exception as e:
+        # Fail gracefully if thinking_logs column doesn't exist
+        print(f"💭 {message}", flush=True)
+
+
 @training_bp.route('/analyze-prompt', methods=['POST'])
 @jwt_required()
 def analyze_with_prompt():
@@ -105,7 +122,11 @@ def analyze_with_prompt():
         if not file_content:
             return jsonify({'error': 'Could not load dataset'}), 500
         
-        df = pd.read_csv(io.BytesIO(file_content))
+        # Support both CSV and Excel files
+        if dataset.file_path.lower().endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(file_content))
+        else:
+            df = pd.read_csv(io.BytesIO(file_content))
         
         # Prepare data for Gemini
         columns = list(df.columns)
@@ -229,12 +250,30 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
     if not experiment:
         return
     
+    # Import ExplanationEngine and AI Insight Generator
+    from app.services.explanation_engine import ExplanationEngine
+    from app.services.ai_insight_generator import ai_insight_generator
+    
+    # Initialize thinking logs and explanation data
+    try:
+        experiment.thinking_logs = ''
+        experiment.explanation_data = ExplanationEngine.init_explanation_data()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    
     print(f"\n{'='*60}", flush=True)
     print(f"🚀 STARTING TRAINING - Experiment #{experiment_id}", flush=True)
     print(f"{'='*60}", flush=True)
     
+    _update_thinking_log(experiment, "🚀 Initializing training pipeline...")
+    
+    # PHASE 1: Understanding Your Data
+    ExplanationEngine.emit_phase(experiment, 'understanding', {'target': target_column})
+    
     try:
         # Load dataset from MinIO or local
+        _update_thinking_log(experiment, "📂 Loading dataset from storage...")
         try:
             from app.services.minio_service import get_minio_service
             print(f"📂 Attempting to download file: {file_path}", flush=True)
@@ -250,8 +289,24 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                 raise Exception("File content is empty or None")
                 
             print(f"📦 Downloaded {len(file_content)} bytes")
-            df = pd.read_csv(io.BytesIO(file_content))
+            # Support both CSV and Excel files
+            if file_path.lower().endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(io.BytesIO(file_content))
+            else:
+                df = pd.read_csv(io.BytesIO(file_content))
             print(f"📊 DataFrame loaded: {df.shape}")
+            _update_thinking_log(experiment, f"✅ Dataset loaded successfully: {df.shape[0]:,} rows × {df.shape[1]} columns")
+            
+            # Generate AI-powered dynamic insights about the dataset
+            ExplanationEngine.emit_insight(experiment, "Analyzing dataset patterns...", 'data_analysis')
+            try:
+                ai_insights = ai_insight_generator.analyze_dataset(df, target_column, goal_description or '')
+                for insight in ai_insights:
+                    ExplanationEngine.emit_insight(experiment, insight, 'data_analysis')
+            except Exception as e:
+                print(f"⚠️ AI insight generation failed: {e}", flush=True)
+                # Fallback to basic insights
+                ExplanationEngine.emit_insight(experiment, f"Dataset contains {len(df):,} examples across {len(df.columns)} features", 'data')
         except Exception as e:
             print(f"⚠️ MinIO download failed: {e}")
             import traceback
@@ -283,23 +338,42 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         y = df[target_column]
         
         # Detect problem type
+        # PHASE 2: Learning Patterns
+        ExplanationEngine.emit_phase(experiment, 'learning', {'features': len(X.columns)})
+        _update_thinking_log(experiment, f"🔍 Analyzing target column '{target_column}'...")
         if y.dtype == 'object' or y.nunique() < 10:
             problem_type = 'classification'
+            _update_thinking_log(experiment, f"🎯 Detected problem type: Classification ({y.nunique()} unique classes)")
+            ExplanationEngine.emit_insight(experiment, f"The model will learn to predict {y.nunique()} different categories.", 'problem')
             if y.dtype == 'object':
                 le = LabelEncoder()
                 y = le.fit_transform(y)
+                _update_thinking_log(experiment, "🔧 Encoded categorical target labels")
         else:
             problem_type = 'regression'
+            _update_thinking_log(experiment, f"🎯 Detected problem type: Regression (continuous values)")
+            ExplanationEngine.emit_insight(experiment, f"The model will learn to predict numeric values for {target_column}.", 'problem')
         
         experiment.problem_type = problem_type
         db.session.commit()
         
         # Use the module-level CombinedPreprocessor for pickle compatibility
+        _update_thinking_log(experiment, "🔧 Preprocessing data: Encoding categorical features...")
+        ExplanationEngine.emit_insight(experiment, "Transforming data into a format the model can learn from.", 'preprocessing')
         preprocessor = CombinedPreprocessor()
         X_scaled = preprocessor.fit_transform(X)
+        _update_thinking_log(experiment, "📊 Preprocessing data: Scaling numeric features...")
         
         # Split data
+        _update_thinking_log(experiment, "✂️ Splitting data into training (80%) and test (20%) sets...")
         X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+        _update_thinking_log(experiment, f"✅ Data prepared: {len(X_train):,} training samples, {len(X_test):,} test samples")
+        
+        # Emit trust data
+        ExplanationEngine.emit_trust_data(experiment, len(df), len(X_train), len(X_test), 'high' if len(df) >= 1000 else 'medium')
+        
+        # PHASE 3: Testing Learning Strategies
+        ExplanationEngine.emit_phase(experiment, 'testing')
         
         # Define models to try - ALL AVAILABLE ALGORITHMS
         if problem_type == 'classification':
@@ -376,13 +450,17 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         print(f"📈 Models to train: {len(models)}")
         print(f"{'─'*40}")
         
+        _update_thinking_log(experiment, f"🧠 Selecting {len(models)} algorithms to evaluate...")
+        
         best_model = None
         best_score = -float('inf')
         best_model_name = ''
         all_results = []
+        total_models = len(models)
         
-        for model_name, model in models:
+        for idx, (model_name, model) in enumerate(models, 1):
             # Create training job record
+            _update_thinking_log(experiment, f"⏳ Training model {idx}/{total_models}: {model_name}...")
             job = TrainingJob(
                 experiment_id=experiment.id,
                 model_name=model_name,
@@ -394,6 +472,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
             
             try:
                 # Train model
+                ExplanationEngine.emit_model_start(experiment, model_name)
                 print(f"\n⏳ Training {model_name}...", flush=True)
                 job.logs += f"⏳ Training model...\n"
                 db.session.commit()
@@ -432,6 +511,21 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                     best_score = score
                     best_model = model
                     best_model_name = model_name
+                
+                _update_thinking_log(experiment, f"📈 {model_name} completed: Score = {score:.4f}")
+                ExplanationEngine.emit_model_result(experiment, model_name, score, job.metrics, problem_type)
+                
+                # Generate AI insight about what this model learned
+                try:
+                    if hasattr(model, 'feature_importances_'):
+                        feature_names = list(X.columns)
+                        importances = dict(zip(feature_names, model.feature_importances_))
+                        learning_insight = ai_insight_generator.analyze_model_learning(
+                            model_name, importances, score, target_column
+                        )
+                        ExplanationEngine.emit_insight(experiment, learning_insight, 'model_learning')
+                except Exception as e:
+                    print(f"⚠️ Model learning insight failed: {e}", flush=True)
                     
             except Exception as e:
                 job.status = 'failed'
@@ -440,7 +534,15 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                 db.session.commit()
                 print(f"   ❌ {model_name}: FAILED - {e}", flush=True)
         
+        # PHASE 4: Comparing Model Behaviors
+        ExplanationEngine.emit_phase(experiment, 'comparing')
+        
         # Update experiment with results
+        _update_thinking_log(experiment, f"🏆 Comparing scores to find best model...")
+        
+        # PHASE 5: Choosing the Best Model
+        ExplanationEngine.emit_phase(experiment, 'choosing')
+        
         experiment.status = 'completed'
         experiment.best_model_name = best_model_name
         experiment.best_score = float(best_score)
@@ -453,6 +555,21 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         }
         db.session.commit()
         
+        _update_thinking_log(experiment, f"🏆 Best model: {best_model_name} with score {best_score:.4f}")
+        
+        # Generate AI insight about why this model won
+        try:
+            comparison_insight = ai_insight_generator.explain_model_comparison(
+                all_results, best_model_name, target_column
+            )
+            ExplanationEngine.emit_insight(experiment, comparison_insight, 'model_comparison')
+        except Exception as e:
+            print(f"⚠️ Model comparison insight failed: {e}", flush=True)
+        
+        # PHASE 6: Final Model Ready
+        ExplanationEngine.emit_phase(experiment, 'ready')
+        ExplanationEngine.emit_final_summary(experiment, best_model_name, best_score, problem_type, target_column, len(X.columns))
+        
         print(f"\n{'='*60}")
         print(f"🏆 TRAINING COMPLETE!")
         print(f"{'='*60}")
@@ -462,6 +579,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         
         # Package the best model into a ZIP file
         if best_model is not None:
+            _update_thinking_log(experiment, "📦 Packaging the best model for deployment...")
             try:
                 import tempfile
                 import sys
@@ -523,6 +641,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                     db.session.commit()
                     
                     print(f"✅ Model package uploaded: {zip_filename}", flush=True)
+                    _update_thinking_log(experiment, "✅ Model packaged and ready for deployment!")
                     
             except Exception as pack_error:
                 print(f"⚠️ Model packaging failed: {pack_error}", flush=True)
@@ -532,6 +651,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
     except Exception as e:
         experiment.status = 'failed'
         experiment.error_message = str(e)
+        _update_thinking_log(experiment, f"❌ Training failed: {str(e)}")
         db.session.commit()
         print(f"Training failed: {e}")
 
@@ -577,6 +697,53 @@ def get_training_logs(job_id):
         })
     
     return jsonify({'logs': logs}), 200
+
+
+@training_bp.route('/<int:job_id>/thinking', methods=['GET'])
+@jwt_required()
+def get_thinking_logs(job_id):
+    """Get real-time thinking logs for the AI training process"""
+    user_id = int(get_jwt_identity())
+    
+    experiment = Experiment.query.filter_by(id=job_id, user_id=user_id).first()
+    if not experiment:
+        return jsonify({'error': 'Experiment not found'}), 404
+    
+    # Parse thinking logs into structured format
+    try:
+        thinking_logs = experiment.thinking_logs or ''
+    except Exception:
+        # Column might not exist yet
+        thinking_logs = ''
+    
+    messages = []
+    
+    for line in thinking_logs.strip().split('\n'):
+        if line.strip():
+            # Parse "[HH:MM:SS] message" format
+            if line.startswith('[') and ']' in line:
+                try:
+                    timestamp = line[1:line.index(']')]
+                    message = line[line.index(']') + 2:]
+                    messages.append({
+                        'timestamp': timestamp,
+                        'message': message
+                    })
+                except:
+                    messages.append({
+                        'timestamp': '',
+                        'message': line
+                    })
+            else:
+                messages.append({
+                    'timestamp': '',
+                    'message': line
+                })
+    
+    return jsonify({
+        'status': experiment.status,
+        'thinking_logs': messages
+    }), 200
 
 
 @training_bp.route('/<int:job_id>/cancel', methods=['POST'])

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import {
     Box,
     Download,
@@ -8,14 +8,345 @@ import {
     TrendingUp,
     Clock,
     BarChart3,
-    Loader2
+    Loader2,
+    Sparkles,
+    Target,
+    Layers,
+    Trophy,
+    ChevronDown,
+    X,
+    Activity,
+    Shield,
+    Zap,
+    Brain,
+    ArrowRight,
+    Info,
+    FlaskConical,
+    CheckCircle
 } from 'lucide-react'
 import { modelsApi } from '../services/api'
 import './Models.css'
 
+/* ── tiny bar-chart drawn in pure SVG ── */
+function MiniBarChart({ data, width = 220, height = 100 }) {
+    if (!data || data.length === 0) return null
+    const max = Math.max(...data.map(d => d.value))
+    const barW = Math.max(12, Math.min(28, (width - data.length * 4) / data.length))
+    const totalW = data.length * (barW + 4)
+    return (
+        <svg width={totalW} height={height + 22} className="mini-bar-chart">
+            {data.map((d, i) => {
+                const barH = max > 0 ? (d.value / max) * height : 0
+                const isBest = d.best
+                return (
+                    <g key={i} transform={`translate(${i * (barW + 4)}, 0)`}>
+                        <rect
+                            y={height - barH}
+                            width={barW}
+                            height={barH}
+                            rx={4}
+                            fill={isBest ? 'url(#bestGrad)' : 'rgba(16,185,129,0.35)'}
+                            className="bar-rect"
+                        />
+                        <text
+                            x={barW / 2}
+                            y={height + 14}
+                            textAnchor="middle"
+                            fontSize={8}
+                            fill="var(--color-gray-500)"
+                        >
+                            {d.label.length > 5 ? d.label.slice(0, 5) : d.label}
+                        </text>
+                    </g>
+                )
+            })}
+            <defs>
+                <linearGradient id="bestGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#34d399" />
+                    <stop offset="100%" stopColor="#10b981" />
+                </linearGradient>
+            </defs>
+        </svg>
+    )
+}
+
+/* ── Radial Score Ring ── */
+function ScoreRing({ score, size = 64 }) {
+    const pct = (score || 0) * 100
+    const r = (size - 8) / 2
+    const circ = 2 * Math.PI * r
+    const offset = circ - (pct / 100) * circ
+    const color = pct >= 80 ? '#10b981' : pct >= 60 ? '#f59e0b' : '#ef4444'
+    return (
+        <svg width={size} height={size} className="score-ring">
+            <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
+            <circle
+                cx={size / 2} cy={size / 2} r={r} fill="none"
+                stroke={color} strokeWidth={5}
+                strokeDasharray={circ} strokeDashoffset={offset}
+                strokeLinecap="round"
+                transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                style={{ transition: 'stroke-dashoffset 1s ease' }}
+            />
+            <text x={size / 2} y={size / 2 + 1} textAnchor="middle" dominantBaseline="middle"
+                fontSize={size > 50 ? 14 : 11} fontWeight={700} fill="#e5e7eb">
+                {pct.toFixed(0)}%
+            </text>
+        </svg>
+    )
+}
+
+/* ── Full Analysis Modal ── */
+function AnalysisModal({ model, onClose, onDelete }) {
+    const modalRef = useRef(null)
+    const allModels = model.results?.all_models || []
+    const explanationData = model.explanation_data || {}
+    const phases = explanationData.phases || []
+    const models = explanationData.models || []
+    const trust = explanationData.trust || {}
+    const insights = explanationData.insights || []
+
+    // Build chart data from all_models
+    const chartData = useMemo(() => {
+        return allModels
+            .sort((a, b) => b.score - a.score)
+            .map(m => ({
+                label: m.model,
+                value: Math.max(0, m.score * 100),
+                best: m.model === model.best_model_name
+            }))
+    }, [allModels, model.best_model_name])
+
+    // close on ESC
+    useEffect(() => {
+        const handler = (e) => { if (e.key === 'Escape') onClose() }
+        window.addEventListener('keydown', handler)
+        return () => window.removeEventListener('keydown', handler)
+    }, [onClose])
+
+    // close on backdrop click
+    const handleBackdrop = (e) => {
+        if (e.target === modalRef.current) onClose()
+    }
+
+    const bestModel = allModels.find(m => m.model === model.best_model_name)
+
+    return (
+        <div className="analysis-backdrop" ref={modalRef} onClick={handleBackdrop}>
+            <div className="analysis-modal">
+                {/* Header */}
+                <div className="analysis-header">
+                    <div className="analysis-header-left">
+                        <div className="analysis-icon-wrap">
+                            <Activity size={20} />
+                        </div>
+                        <div>
+                            <h2>Model Analysis</h2>
+                            <p className="analysis-subtitle">{model.name}</p>
+                        </div>
+                    </div>
+                    <div className="analysis-header-actions">
+                        {onDelete && (
+                            <button
+                                className="btn-icon btn-danger-icon"
+                                onClick={() => {
+                                    if (window.confirm('Are you sure you want to delete this model? This action cannot be undone.')) {
+                                        onDelete()
+                                        onClose()
+                                    }
+                                }}
+                                title="Delete Model"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        )}
+                        <button className="close-btn" onClick={onClose}>
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="analysis-body">
+                    {/* ── Overview Cards Row ── */}
+                    <div className="overview-cards">
+                        <div className="overview-card">
+                            <div className="ov-icon ov-purple"><Trophy size={18} /></div>
+                            <div className="ov-info">
+                                <span className="ov-label">Best Model</span>
+                                <span className="ov-value">{model.best_model_name || '—'}</span>
+                            </div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="ov-icon ov-green"><Target size={18} /></div>
+                            <div className="ov-info">
+                                <span className="ov-label">Accuracy</span>
+                                <span className="ov-value">{model.best_score ? `${(model.best_score * 100).toFixed(1)}%` : '—'}</span>
+                            </div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="ov-icon ov-blue"><FlaskConical size={18} /></div>
+                            <div className="ov-info">
+                                <span className="ov-label">Models Tested</span>
+                                <span className="ov-value">{allModels.length}</span>
+                            </div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="ov-icon ov-amber"><Zap size={18} /></div>
+                            <div className="ov-info">
+                                <span className="ov-label">Problem Type</span>
+                                <span className="ov-value capitalize">{model.problem_type || '—'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Model Comparison Chart ── */}
+                    {chartData.length > 0 && (
+                        <div className="analysis-section">
+                            <h3><BarChart3 size={16} /> Model Performance Comparison</h3>
+                            <div className="chart-container">
+                                <div className="chart-wrapper">
+                                    {chartData.map((d, i) => (
+                                        <div key={i} className={`chart-bar-col ${d.best ? 'best' : ''}`}>
+                                            <span className="chart-value">{d.value.toFixed(1)}%</span>
+                                            <div className="chart-bar-track">
+                                                <div
+                                                    className="chart-bar-fill"
+                                                    style={{ height: `${d.value}%` }}
+                                                />
+                                            </div>
+                                            <span className="chart-label">{d.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Detailed Metrics Table ── */}
+                    {allModels.length > 0 && (
+                        <div className="analysis-section">
+                            <h3><Layers size={16} /> Detailed Metrics</h3>
+                            <div className="metrics-table-wrap">
+                                <table className="metrics-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Model</th>
+                                            <th>Score</th>
+                                            {Object.keys(allModels[0]?.metrics || {}).map(key => (
+                                                <th key={key}>{key.replace('_', ' ')}</th>
+                                            ))}
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {allModels.sort((a, b) => b.score - a.score).map((m, i) => (
+                                            <tr key={i} className={m.model === model.best_model_name ? 'best-row' : ''}>
+                                                <td className="model-name-cell">
+                                                    {m.model === model.best_model_name && <Trophy size={12} className="trophy-mini" />}
+                                                    {m.model}
+                                                </td>
+                                                <td className="score-cell">{(m.score * 100).toFixed(2)}%</td>
+                                                {Object.values(m.metrics || {}).map((val, j) => (
+                                                    <td key={j}>{typeof val === 'number' ? val.toFixed(4) : val}</td>
+                                                ))}
+                                                <td>
+                                                    <span className={`mini-badge ${m.model === model.best_model_name ? 'winner' : ''}`}>
+                                                        {m.model === model.best_model_name ? '🏆 Best' : 'Tested'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── AI Insights ── */}
+                    {insights.length > 0 && (
+                        <div className="analysis-section">
+                            <h3><Brain size={16} /> AI Insights</h3>
+                            <div className="insights-list">
+                                {insights.slice(0, 8).map((insight, i) => (
+                                    <div key={i} className="insight-item">
+                                        <span className="insight-dot" />
+                                        <p>{insight.message}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Training Phases ── */}
+                    {phases.length > 0 && (
+                        <div className="analysis-section">
+                            <h3><Activity size={16} /> Training Pipeline</h3>
+                            <div className="phases-timeline">
+                                {phases.map((phase, i) => (
+                                    <div key={i} className="phase-item">
+                                        <div className="phase-connector-line" />
+                                        <div className="phase-dot">
+                                            <CheckCircle size={14} />
+                                        </div>
+                                        <div className="phase-info">
+                                            <span className="phase-icon">{phase.icon}</span>
+                                            <div>
+                                                <strong>{phase.title}</strong>
+                                                <p>{phase.description}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Trust & Safety ── */}
+                    {trust.data_size && (
+                        <div className="analysis-section">
+                            <h3><Shield size={16} /> Trust & Reliability</h3>
+                            <div className="trust-grid">
+                                <div className="trust-item">
+                                    <span className="trust-label">Dataset Size</span>
+                                    <span className="trust-value">{trust.data_size?.toLocaleString()} rows</span>
+                                </div>
+                                <div className="trust-item">
+                                    <span className="trust-label">Training Split</span>
+                                    <span className="trust-value">{trust.train_ratio || '80%'}</span>
+                                </div>
+                                <div className="trust-item">
+                                    <span className="trust-label">Test Split</span>
+                                    <span className="trust-value">{trust.test_ratio || '20%'}</span>
+                                </div>
+                                <div className="trust-item">
+                                    <span className="trust-label">Confidence</span>
+                                    <span className={`trust-badge trust-${trust.confidence || 'medium'}`}>
+                                        {trust.confidence || 'medium'}
+                                    </span>
+                                </div>
+                            </div>
+                            {trust.confidence_reasons && (
+                                <ul className="trust-reasons">
+                                    {trust.confidence_reasons.map((r, i) => (
+                                        <li key={i}>{r}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+/* ══════════════════════════════════════
+   Main Models Page
+   ══════════════════════════════════════ */
 export default function Models() {
     const queryClient = useQueryClient()
     const [downloadingId, setDownloadingId] = useState(null)
+    const [analysisModel, setAnalysisModel] = useState(null)
 
     const { data, isLoading } = useQuery({
         queryKey: ['models'],
@@ -39,8 +370,6 @@ export default function Models() {
         setDownloadingId(modelId)
         try {
             const response = await modelsApi.download(modelId)
-
-            // Create blob and download
             const blob = new Blob([response.data], { type: 'application/zip' })
             const url = window.URL.createObjectURL(blob)
             const a = document.createElement('a')
@@ -58,98 +387,224 @@ export default function Models() {
         }
     }
 
-    const getProblemTypeIcon = (type) => {
-        if (type?.includes('classification')) return '🎯'
-        if (type === 'regression') return '📈'
-        if (type === 'clustering') return '🔮'
-        if (type === 'timeseries') return '📊'
-        return '🤖'
+    const getProblemTypeColor = (type) => {
+        if (type?.includes('classification')) return 'purple'
+        if (type === 'regression') return 'blue'
+        if (type === 'clustering') return 'amber'
+        if (type === 'timeseries') return 'green'
+        return 'gray'
     }
 
     return (
         <div className="models-page">
-            <div className="page-header">
-                <h1>Trained Models</h1>
-                <p>View and manage your trained machine learning models</p>
+            {/* Hero header */}
+            <div className="models-hero">
+                <div className="hero-glow" />
+                <div className="hero-content">
+                    <span className="hero-badge"><Sparkles size={12} /> MODEL VAULT</span>
+                    <h1>Trained Models</h1>
+                    <p className="hero-subtitle">
+                        View, analyze, and deploy your trained machine learning models.
+                        Each model includes full performance metrics and AI-powered analysis.
+                    </p>
+                </div>
             </div>
 
+            {/* Stats strip */}
+            {models.length > 0 && (
+                <div className="stats-strip">
+                    <div className="stat-chip">
+                        <Layers size={14} />
+                        <span><strong>{models.length}</strong> Models</span>
+                    </div>
+                    <div className="stat-chip">
+                        <Trophy size={14} />
+                        <span>Best: <strong>
+                            {models.length > 0 ? `${(Math.max(...models.map(m => m.best_score || 0)) * 100).toFixed(1)}%` : '—'}
+                        </strong></span>
+                    </div>
+                    <div className="stat-chip">
+                        <Target size={14} />
+                        <span>Types: <strong>
+                            {[...new Set(models.map(m => m.problem_type).filter(Boolean))].join(', ') || '—'}
+                        </strong></span>
+                    </div>
+                </div>
+            )}
+
+            {/* Model list */}
             {isLoading ? (
                 <div className="loading-state">
-                    <div className="spinner"></div>
+                    <div className="spinner" />
                     <p>Loading models...</p>
                 </div>
             ) : models.length > 0 ? (
                 <div className="models-grid">
-                    {models.map((model) => (
-                        <div key={model.id} className="model-card card">
-                            <div className="model-header">
-                                <div className="model-icon">
-                                    {getProblemTypeIcon(model.problem_type)}
+                    {models.map((model) => {
+                        const allResults = model.results?.all_models || []
+                        const chartData = allResults
+                            .sort((a, b) => b.score - a.score)
+                            .slice(0, 6)
+                            .map(m => ({
+                                label: m.model,
+                                value: Math.max(0, m.score * 100),
+                                best: m.model === model.best_model_name
+                            }))
+
+                        return (
+                            <div key={model.id} className="model-card card">
+                                {/* Card top — badge + score ring */}
+                                <div className="model-card-top">
+                                    <div className="mc-left">
+                                        <span className={`problem-badge pb-${getProblemTypeColor(model.problem_type)}`}>
+                                            {model.problem_type?.replace('_', ' ') || 'unknown'}
+                                        </span>
+                                        <h3 className="model-name">{model.name}</h3>
+                                    </div>
+                                    <ScoreRing score={model.best_score} size={58} />
                                 </div>
-                                <div className="model-meta">
-                                    <span className="badge badge-info">
-                                        {model.problem_type?.replace('_', ' ')}
-                                    </span>
+
+                                {/* Quick stats */}
+                                <div className="model-quick-stats">
+                                    <div className="qs-item">
+                                        <Trophy size={13} className="qs-icon" />
+                                        <span className="qs-label">Best</span>
+                                        <span className="qs-val">{model.best_model_name || '—'}</span>
+                                    </div>
+                                    <div className="qs-item">
+                                        <Target size={13} className="qs-icon" />
+                                        <span className="qs-label">Target</span>
+                                        <span className="qs-val mono">{model.target_column || '—'}</span>
+                                    </div>
+                                    <div className="qs-item">
+                                        <Clock size={13} className="qs-icon" />
+                                        <span className="qs-label">Trained</span>
+                                        <span className="qs-val">{new Date(model.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+
+                                {/* Mini chart preview */}
+                                {chartData.length > 0 && (
+                                    <div className="mini-chart-preview">
+                                        <MiniBarChart data={chartData} height={50} />
+                                    </div>
+                                )}
+
+                                {/* Actions */}
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '8px',
+                                    marginTop: 'auto',
+                                    paddingTop: '12px',
+                                    borderTop: '1px solid rgba(255,255,255,0.1)'
+                                }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            onClick={() => setAnalysisModel(model)}
+                                            style={{
+                                                flex: 1,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px',
+                                                padding: '8px 12px',
+                                                background: 'rgba(16,185,129,0.12)',
+                                                border: '1px solid rgba(16,185,129,0.35)',
+                                                borderRadius: '8px',
+                                                color: '#6ee7b7',
+                                                fontSize: '0.82rem',
+                                                fontWeight: 600,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <BarChart3 size={14} />
+                                            Analyze
+                                        </button>
+                                        <Link
+                                            to={`/predictions/${model.id}`}
+                                            style={{
+                                                flex: 1,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px',
+                                                padding: '8px 12px',
+                                                background: 'linear-gradient(135deg, #059669, #14b8a6)',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                color: '#fff',
+                                                fontSize: '0.82rem',
+                                                fontWeight: 600,
+                                                textDecoration: 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <TrendingUp size={14} />
+                                            Predict
+                                        </Link>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            onClick={() => handleDownload(model.id, model.name)}
+                                            disabled={downloadingId === model.id || !model.has_package}
+                                            title={!model.has_package ? 'Package not available' : 'Download model'}
+                                            style={{
+                                                flex: 1,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px',
+                                                padding: '8px 12px',
+                                                background: 'rgba(16,185,129,0.15)',
+                                                border: '2px solid rgba(16,185,129,0.5)',
+                                                borderRadius: '8px',
+                                                color: '#6ee7b7',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 600,
+                                                cursor: (!model.has_package) ? 'not-allowed' : 'pointer',
+                                                opacity: (!model.has_package) ? 0.4 : 1
+                                            }}
+                                        >
+                                            {downloadingId === model.id ? (
+                                                <Loader2 size={14} className="spin" />
+                                            ) : (
+                                                <Download size={14} />
+                                            )}
+                                            Download
+                                        </button>
+                                        <button
+                                            disabled={deleteMutation.isPending}
+                                            title="Delete Model"
+                                            onClick={() => {
+                                                if (window.confirm('Delete this model?')) {
+                                                    deleteMutation.mutate(model.id)
+                                                }
+                                            }}
+                                            style={{
+                                                flex: 1,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '6px',
+                                                padding: '8px 12px',
+                                                background: 'rgba(239,68,68,0.15)',
+                                                border: '2px solid rgba(239,68,68,0.5)',
+                                                borderRadius: '8px',
+                                                color: '#fca5a5',
+                                                fontSize: '0.8rem',
+                                                fontWeight: 600,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <Trash2 size={14} />
+                                            Delete
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-
-                            <h3 className="model-name">{model.name}</h3>
-
-                            <div className="model-stats">
-                                <div className="stat">
-                                    <BarChart3 size={16} />
-                                    <span>{model.best_model_name || 'Auto'}</span>
-                                </div>
-                                <div className="stat">
-                                    <TrendingUp size={16} />
-                                    <span>{model.best_score ? `${(model.best_score * 100).toFixed(1)}%` : '—'}</span>
-                                </div>
-                                <div className="stat">
-                                    <Clock size={16} />
-                                    <span>{new Date(model.created_at).toLocaleDateString()}</span>
-                                </div>
-                            </div>
-
-                            <div className="model-target">
-                                <span className="target-label">Target:</span>
-                                <span className="target-value">{model.target_column}</span>
-                            </div>
-
-                            <div className="model-actions">
-                                <Link
-                                    to={`/predictions/${model.id}`}
-                                    className="btn btn-primary"
-                                >
-                                    <TrendingUp size={16} />
-                                    Predict
-                                </Link>
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => handleDownload(model.id, model.name)}
-                                    disabled={downloadingId === model.id || !model.has_package}
-                                    title={!model.has_package ? 'Package not available. Train a new model to enable downloads.' : 'Download model package'}
-                                >
-                                    {downloadingId === model.id ? (
-                                        <Loader2 size={16} className="spin" />
-                                    ) : (
-                                        <Download size={16} />
-                                    )}
-                                    {downloadingId === model.id ? 'Downloading...' : 'Download'}
-                                </button>
-                                <button
-                                    className="btn btn-secondary btn-danger"
-                                    disabled={deleteMutation.isPending}
-                                    onClick={() => {
-                                        if (window.confirm('Delete this model?')) {
-                                            deleteMutation.mutate(model.id)
-                                        }
-                                    }}
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             ) : (
                 <div className="empty-state card">
@@ -157,9 +612,19 @@ export default function Models() {
                     <h3>No models yet</h3>
                     <p>Train your first model to see it here</p>
                     <Link to="/training" className="btn btn-primary">
+                        <Zap size={16} />
                         Start Training
                     </Link>
                 </div>
+            )}
+
+            {/* Analysis modal */}
+            {analysisModel && (
+                <AnalysisModal
+                    model={analysisModel}
+                    onClose={() => setAnalysisModel(null)}
+                    onDelete={() => deleteMutation.mutate(analysisModel.id)}
+                />
             )}
         </div>
     )

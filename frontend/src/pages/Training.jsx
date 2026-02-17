@@ -9,15 +9,21 @@ import {
     Clock,
     AlertCircle,
     Sparkles,
-    Wand2
+    Wand2,
+    Brain,
+    ChevronDown,
+    Database,
+    Zap,
+    BarChart3,
+    Terminal
 } from 'lucide-react'
 import { datasetsApi, trainingApi } from '../services/api'
+import LearningTimeline from '../components/LearningTimeline'
 import './Training.css'
 
 export default function Training() {
     const [searchParams] = useSearchParams()
     const preselectedDataset = searchParams.get('dataset')
-    const navigate = import.meta.env.VITE_NAVIGATE_HOOK ? import.meta.env.VITE_NAVIGATE_HOOK() : null
 
     const [selectedDataset, setSelectedDataset] = useState(preselectedDataset || '')
     const [targetColumn, setTargetColumn] = useState('')
@@ -67,6 +73,19 @@ export default function Training() {
         refetchInterval: isTraining ? 2000 : false
     })
 
+    // Polling for thinking logs
+    const { data: thinkingData } = useQuery({
+        queryKey: ['training-thinking', currentJob?.id],
+        queryFn: () => trainingApi.getThinkingLogs(currentJob.id),
+        enabled: !!currentJob,
+        refetchInterval: isTraining ? 1500 : false
+    })
+
+    const thinkingMessages = thinkingData?.data?.thinking_logs || []
+
+    // Get explanation data from status response
+    const explanationData = statusData?.data?.experiment?.explanation_data || null
+
     const startTrainingMutation = useMutation({
         mutationFn: (data) => trainingApi.start(data),
         onSuccess: (response) => {
@@ -92,11 +111,9 @@ export default function Training() {
             const response = await trainingApi.analyzePrompt(parseInt(selectedDataset), aiPrompt)
             if (response.data.success) {
                 setAiAnalysis(response.data.analysis)
-                // Auto-select the suggested target column
                 if (response.data.analysis.suggested_target) {
                     setTargetColumn(response.data.analysis.suggested_target)
                 }
-                // Use the prompt as goal description
                 setGoalDescription(aiPrompt)
             } else {
                 setAnalysisError(response.data.error || 'Analysis failed')
@@ -109,12 +126,12 @@ export default function Training() {
     }
 
     const handleStartTraining = () => {
-        if (!selectedDataset || !targetColumn) return
+        if (!selectedDataset || !experimentName.trim()) return
 
         startTrainingMutation.mutate({
             dataset_id: parseInt(selectedDataset),
-            name: experimentName || `Experiment ${new Date().toLocaleDateString()}`,
-            target_column: targetColumn,
+            name: experimentName.trim(),
+            target_column: targetColumn || null,
             goal_description: goalDescription
         })
     }
@@ -132,21 +149,67 @@ export default function Training() {
         }
     }, [combinedLogs])
 
+    const experimentStatus = statusData?.data?.experiment?.status
 
     return (
         <div className="training-page">
-            <div className="page-header">
-                <h1>Model Training</h1>
-                <p>Train machine learning models with AutoML</p>
+            {/* ── Compact Header ── */}
+            <div className="training-header">
+                <div className="header-left">
+                    <Cpu size={20} className="header-icon" />
+                    <h1>Model Training</h1>
+                </div>
+                <button
+                    className="btn btn-primary start-btn"
+                    onClick={handleStartTraining}
+                    disabled={!experimentName.trim() || !selectedDataset || (isTraining && experimentStatus !== 'completed')}
+                >
+                    {isTraining ? (
+                        <>
+                            <div className="spinner" style={{ width: 16, height: 16 }}></div>
+                            Training...
+                        </>
+                    ) : (
+                        <>
+                            <Play size={16} />
+                            {experimentStatus === 'completed' ? 'New Training' : 'Start Training'}
+                        </>
+                    )}
+                </button>
             </div>
 
+            {/* ── Two-Column Layout ── */}
             <div className="training-layout">
-                {/* Configuration Panel */}
-                <div className="config-panel card">
-                    <h2>Training Configuration</h2>
 
+                {/* ═══ LEFT PANEL: User Inputs ═══ */}
+                <div className="panel panel-left">
+                    <div className="panel-header">
+                        <Zap size={16} />
+                        <span>Configuration</span>
+                    </div>
+
+                    {/* 1. Experiment Name (Required) */}
                     <div className="form-group">
-                        <label className="label">Dataset</label>
+                        <label className="label">
+                            Experiment Name <span className="required">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            className={`input ${!experimentName.trim() ? 'input-required' : ''}`}
+                            value={experimentName}
+                            onChange={(e) => setExperimentName(e.target.value)}
+                            placeholder="Enter experiment name..."
+                            disabled={isTraining}
+                            required
+                        />
+                    </div>
+
+                    {/* 2. Dataset */}
+                    <div className="form-group">
+                        <label className="label">
+                            <Database size={14} />
+                            Dataset <span className="required">*</span>
+                        </label>
                         <select
                             className="input"
                             value={selectedDataset}
@@ -162,255 +225,197 @@ export default function Training() {
                         </select>
                     </div>
 
-                    {/* AI Goal Analysis Section */}
-                    {selectedDataset && columns.length > 0 && (
-                        <div className="ai-analysis-section">
-                            <div className="form-group">
-                                <label className="label">
-                                    <Sparkles size={16} />
-                                    Describe Your Goal (AI-Powered)
-                                </label>
-                                <div className="ai-input-row">
-                                    <textarea
-                                        className="input textarea"
-                                        value={aiPrompt}
-                                        onChange={(e) => setAiPrompt(e.target.value)}
-                                        placeholder="e.g., I want to predict which products need restocking based on sales patterns..."
-                                        rows={2}
-                                        disabled={isTraining || isAnalyzing}
-                                    />
-                                    <button
-                                        className="btn btn-secondary ai-analyze-btn"
-                                        onClick={handleAnalyzeWithAI}
-                                        disabled={!aiPrompt.trim() || isAnalyzing || isTraining}
-                                    >
-                                        {isAnalyzing ? (
-                                            <div className="spinner" style={{ width: 16, height: 16 }}></div>
-                                        ) : (
-                                            <Wand2 size={16} />
-                                        )}
-                                        {isAnalyzing ? 'Analyzing...' : 'Analyze'}
-                                    </button>
-                                </div>
-                                <p className="form-hint">
-                                    Let AI suggest the best target column based on your goal
-                                </p>
-                            </div>
-
-                            {/* AI Analysis Results */}
-                            {aiAnalysis && (
-                                <div className="ai-analysis-result">
-                                    <div className="ai-result-header">
-                                        <Sparkles size={18} className="text-primary" />
-                                        <span>AI Recommendation</span>
-                                    </div>
-                                    <div className="ai-result-content">
-                                        <div className="ai-result-item">
-                                            <strong>Suggested Target:</strong>
-                                            <span className="ai-target-badge">{aiAnalysis.suggested_target}</span>
-                                        </div>
-                                        <div className="ai-result-item">
-                                            <strong>Problem Type:</strong>
-                                            <span className="ai-problem-badge">{aiAnalysis.problem_type}</span>
-                                        </div>
-                                        {aiAnalysis.confidence && (
-                                            <div className="ai-result-item">
-                                                <strong>Confidence:</strong>
-                                                <span>{(aiAnalysis.confidence * 100).toFixed(0)}%</span>
-                                            </div>
-                                        )}
-                                        <div className="ai-reasoning">
-                                            <strong>Reasoning:</strong>
-                                            <p>{aiAnalysis.reasoning}</p>
-                                        </div>
-                                        {aiAnalysis.preprocessing_suggestions?.length > 0 && (
-                                            <div className="ai-suggestions">
-                                                <strong>Preprocessing Tips:</strong>
-                                                <ul>
-                                                    {aiAnalysis.preprocessing_suggestions.map((tip, i) => (
-                                                        <li key={i}>{tip}</li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {analysisError && (
-                                <div className="ai-error">
-                                    <AlertCircle size={16} />
-                                    <span>{analysisError}</span>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {selectedDataset && columns.length > 0 && (
-                        <div className="form-group">
-                            <label className="label">
-                                <Target size={16} />
-                                Target Column
-                            </label>
-                            <select
-                                className="input"
-                                value={targetColumn}
-                                onChange={(e) => setTargetColumn(e.target.value)}
-                                disabled={isTraining}
+                    {/* 3. AI Goal Analysis */}
+                    <div className={`ai-section ${!selectedDataset ? 'section-disabled' : ''}`}>
+                        <label className="label">
+                            <Sparkles size={14} />
+                            AI Goal Analysis
+                        </label>
+                        <div className="ai-input-row">
+                            <textarea
+                                className="input textarea"
+                                value={aiPrompt}
+                                onChange={(e) => setAiPrompt(e.target.value)}
+                                placeholder="e.g., Predict which products need restocking..."
+                                rows={2}
+                                disabled={!selectedDataset || isTraining || isAnalyzing}
+                            />
+                            <button
+                                className="btn btn-secondary ai-analyze-btn"
+                                onClick={handleAnalyzeWithAI}
+                                disabled={!selectedDataset || !aiPrompt.trim() || isAnalyzing || isTraining}
                             >
-                                <option value="">Select target column...</option>
-                                {columns.map((col) => (
-                                    <option key={col} value={col}>{col}</option>
-                                ))}
-                            </select>
-                            <p className="form-hint">
-                                The column you want to predict
-                            </p>
+                                {isAnalyzing ? (
+                                    <div className="spinner" style={{ width: 14, height: 14 }}></div>
+                                ) : (
+                                    <Wand2 size={14} />
+                                )}
+                                {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                            </button>
                         </div>
-                    )}
+                        <p className="form-hint">Let AI suggest the best target column</p>
 
-                    <div className="form-group">
-                        <label className="label">Experiment Name (Optional)</label>
-                        <input
-                            type="text"
-                            className="input"
-                            value={experimentName}
-                            onChange={(e) => setExperimentName(e.target.value)}
-                            placeholder="My Experiment"
-                            disabled={isTraining}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="label">Goal Description (Optional)</label>
-                        <textarea
-                            className="input textarea"
-                            value={goalDescription}
-                            onChange={(e) => setGoalDescription(e.target.value)}
-                            placeholder="Describe what you want to predict..."
-                            rows={3}
-                            disabled={isTraining}
-                        />
-                    </div>
-
-                    <button
-                        className="btn btn-primary start-btn"
-                        onClick={handleStartTraining}
-                        disabled={!selectedDataset || !targetColumn || (isTraining && !statusData?.data?.experiment?.status === 'completed')}
-                    >
-                        {isTraining ? (
-                            <>
-                                <div className="spinner" style={{ width: 18, height: 18 }}></div>
-                                Training...
-                            </>
-                        ) : (
-                            <>
-                                <Play size={18} />
-                                {statusData?.data?.experiment?.status === 'completed' ? 'Start New Training' : 'Start Training'}
-                            </>
-                        )}
-                    </button>
-
-                    {statusData?.data?.experiment?.status === 'completed' && (
-                        <div className="success-message">
-                            <CheckCircle size={24} className="text-success" />
-                            <h3>Training Success!</h3>
-
-                            {statusData.data.experiment.best_model_name && (
-                                <div className="result-summary">
-                                    <div className="result-item">
-                                        <span className="result-label">🏆 Best Model</span>
-                                        <span className="result-value">{statusData.data.experiment.best_model_name}</span>
-                                    </div>
-                                    <div className="result-item">
-                                        <span className="result-label">📊 Score</span>
-                                        <span className="result-value">
-                                            {(statusData.data.experiment.best_score * 100).toFixed(2)}%
-                                        </span>
-                                    </div>
+                        {/* AI Analysis Results */}
+                        {aiAnalysis && (
+                            <div className="ai-analysis-result">
+                                <div className="ai-result-header">
+                                    <Sparkles size={16} className="text-primary" />
+                                    <span>AI Recommendation</span>
                                 </div>
-                            )}
+                                <div className="ai-result-content">
+                                    <div className="ai-result-item">
+                                        <strong>Target:</strong>
+                                        <span className="ai-target-badge">{aiAnalysis.suggested_target}</span>
+                                    </div>
+                                    <div className="ai-result-item">
+                                        <strong>Type:</strong>
+                                        <span className="ai-problem-badge">{aiAnalysis.problem_type}</span>
+                                    </div>
+                                    {aiAnalysis.confidence && (
+                                        <div className="ai-result-item">
+                                            <strong>Confidence:</strong>
+                                            <span>{(aiAnalysis.confidence * 100).toFixed(0)}%</span>
+                                        </div>
+                                    )}
+                                    <div className="ai-reasoning">
+                                        <strong>Reasoning:</strong>
+                                        <p>{aiAnalysis.reasoning}</p>
+                                    </div>
+                                    {aiAnalysis.preprocessing_suggestions?.length > 0 && (
+                                        <div className="ai-suggestions">
+                                            <strong>Tips:</strong>
+                                            <ul>
+                                                {aiAnalysis.preprocessing_suggestions.map((tip, i) => (
+                                                    <li key={i}>{tip}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
-                            <a href="/models" className="btn btn-sm btn-outline">View Models</a>
-                        </div>
-                    )}
+                        {analysisError && (
+                            <div className="ai-error">
+                                <AlertCircle size={14} />
+                                <span>{analysisError}</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 4. Target Column (Optional — not needed for all training types) */}
+                    <div className="form-group">
+                        <label className="label">
+                            <Target size={14} />
+                            Target Column <span className="optional-tag">Optional</span>
+                        </label>
+                        <select
+                            className="input"
+                            value={targetColumn}
+                            onChange={(e) => setTargetColumn(e.target.value)}
+                            disabled={!selectedDataset || isTraining}
+                        >
+                            <option value="">{selectedDataset ? 'None (auto-detect or unsupervised)' : 'Select a dataset first...'}</option>
+                            {columns.map((col) => (
+                                <option key={col} value={col}>{col}</option>
+                            ))}
+                        </select>
+                        <p className="form-hint">Select only for supervised learning (classification / regression)</p>
+                    </div>
                 </div>
 
-                {/* Training Progress / Info Panel */}
-                <div className="info-panel">
-                    {currentJob ? (
-                        <div className="progress-card card">
-                            <div className="progress-header">
-                                <Cpu size={24} className="text-primary" />
-                                <div>
-                                    <h3>{currentJob.name}</h3>
-                                    <p className={`status-badge ${statusData?.data?.experiment?.status}`}>
-                                        Status: {statusData?.data?.experiment?.status || 'Starting...'}
-                                    </p>
-                                </div>
-                            </div>
+                {/* ═══ RIGHT PANEL: Logs + Model Progress ═══ */}
+                <div className="panel panel-right">
 
-                            <div className="progress-steps">
-                                <div className={`step ${['training', 'completed'].includes(statusData?.data?.experiment?.status) ? 'completed' : ''}`}>
-                                    <CheckCircle size={20} />
-                                    <span>Preprocessing</span>
-                                </div>
-                                <div className={`step ${statusData?.data?.experiment?.status === 'training' ? 'active' : statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
-                                    <Clock size={20} className={statusData?.data?.experiment?.status === 'training' ? 'animate-pulse' : ''} />
-                                    <span>Training</span>
-                                </div>
-                                <div className={`step ${statusData?.data?.experiment?.status === 'completed' ? 'completed' : ''}`}>
-                                    <div className="step-dot"></div>
-                                    <span>Evaluation</span>
-                                </div>
-                            </div>
+                    {/* RIGHT TOP: Developer Logs */}
+                    <div className="right-section logs-section">
+                        <div className="panel-header">
+                            <Terminal size={16} />
+                            <span>Developer Logs</span>
+                            {isTraining && <div className="live-dot" />}
+                        </div>
+                        <pre className="terminal-content">
+                            {combinedLogs || 'Waiting for training to start...'}
+                            <div ref={logsEndRef} />
+                        </pre>
+                    </div>
 
-                            {/* Live Logs Terminal */}
-                            <div className="logs-terminal">
-                                <div className="terminal-header">
-                                    <span>Build Logs</span>
-                                </div>
-                                <pre className="terminal-content">
-                                    {combinedLogs || 'Waiting for logs...'}
-                                    <div ref={logsEndRef} />
-                                </pre>
-                            </div>
+                    {/* RIGHT BOTTOM: What the Model Does */}
+                    <div className="right-section model-section">
+                        <div className="panel-header">
+                            <Brain size={16} />
+                            <span>What the Model is Doing</span>
                         </div>
-                    ) : (
-                        <div className="info-card card">
-                            <h3>How it works</h3>
-                            <div className="info-steps">
-                                <div className="info-step">
-                                    <div className="step-number">1</div>
-                                    <div>
-                                        <h4>Select Dataset</h4>
-                                        <p>Choose the dataset you want to train on</p>
+
+                        {currentJob ? (
+                            <div className="model-progress-content">
+                                {/* Status Bar */}
+                                <div className="status-row">
+                                    <span className="exp-name">{currentJob.name}</span>
+                                    <span className={`status-badge ${experimentStatus}`}>
+                                        {experimentStatus || 'Starting...'}
+                                    </span>
+                                </div>
+
+                                {/* Pipeline Steps */}
+                                <div className="pipeline-steps">
+                                    <div className={`pipeline-step ${['training', 'completed'].includes(experimentStatus) ? 'completed' : 'active'}`}>
+                                        <div className="pipeline-dot">
+                                            <CheckCircle size={14} />
+                                        </div>
+                                        <span>Preprocessing</span>
+                                    </div>
+                                    <div className="pipeline-line" />
+                                    <div className={`pipeline-step ${experimentStatus === 'training' ? 'active' : experimentStatus === 'completed' ? 'completed' : ''}`}>
+                                        <div className="pipeline-dot">
+                                            <Clock size={14} className={experimentStatus === 'training' ? 'animate-pulse' : ''} />
+                                        </div>
+                                        <span>Training</span>
+                                    </div>
+                                    <div className="pipeline-line" />
+                                    <div className={`pipeline-step ${experimentStatus === 'completed' ? 'completed' : ''}`}>
+                                        <div className="pipeline-dot">
+                                            <BarChart3 size={14} />
+                                        </div>
+                                        <span>Evaluation</span>
                                     </div>
                                 </div>
-                                <div className="info-step">
-                                    <div className="step-number">2</div>
-                                    <div>
-                                        <h4>Choose Target</h4>
-                                        <p>Select the column you want to predict</p>
+
+                                {/* Learning Timeline */}
+                                <LearningTimeline
+                                    explanationData={explanationData}
+                                    isTraining={isTraining}
+                                />
+
+                                {/* Training Success */}
+                                {experimentStatus === 'completed' && (
+                                    <div className="success-message">
+                                        <CheckCircle size={20} className="text-success" />
+                                        <h3>Training Complete!</h3>
+                                        {statusData.data.experiment.best_model_name && (
+                                            <div className="result-summary">
+                                                <div className="result-item">
+                                                    <span className="result-label">🏆 Best Model</span>
+                                                    <span className="result-value">{statusData.data.experiment.best_model_name}</span>
+                                                </div>
+                                                <div className="result-item">
+                                                    <span className="result-label">📊 Score</span>
+                                                    <span className="result-value">
+                                                        {(statusData.data.experiment.best_score * 100).toFixed(2)}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <a href="/models" className="btn btn-sm btn-outline">View Models</a>
                                     </div>
-                                </div>
-                                <div className="info-step">
-                                    <div className="step-number">3</div>
-                                    <div>
-                                        <h4>AutoML Training</h4>
-                                        <p>We automatically select and train the best model</p>
-                                    </div>
-                                </div>
-                                <div className="info-step">
-                                    <div className="step-number">4</div>
-                                    <div>
-                                        <h4>Get Results</h4>
-                                        <p>Review metrics and start making predictions</p>
-                                    </div>
-                                </div>
+                                )}
                             </div>
-                        </div>
-                    )}
+                        ) : (
+                            <div className="model-empty">
+                                <p>Configure and start training to see model progress here.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

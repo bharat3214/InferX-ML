@@ -33,6 +33,12 @@ class Experiment(db.Model):
     # Training results (includes model_package_path)
     results = db.Column(db.JSON, default=dict)
     
+    # Live thinking/status logs for real-time UI updates
+    thinking_logs = db.Column(db.Text, default='')
+    
+    # Rich explanation data for human-friendly UI
+    explanation_data = db.Column(db.JSON, default=dict)
+    
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -58,8 +64,11 @@ class Experiment(db.Model):
             'status': self.status,
             'best_model_name': self.best_model_name,
             'best_score': self.best_score,
+            'thinking_logs': self.thinking_logs or '',
+            'explanation_data': self.explanation_data or {},
             'created_at': self.created_at.isoformat(),
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'results': results,
             'has_package': bool(results.get('model_package_path'))
         }
     
