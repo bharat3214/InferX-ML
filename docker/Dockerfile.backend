@@ -1,18 +1,29 @@
-# Backend Dockerfile
-FROM python:3.10-slim
+# Backend Dockerfile (GPU-enabled)
+# Uses NVIDIA CUDA base image for GPU support.
+# If no GPU is available, the application still runs on CPU.
+
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
+
+# Prevent interactive prompts during install
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install system dependencies
+# Install Python 3.10 and system dependencies
 RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-venv \
+    python3-pip \
     build-essential \
     libpq-dev \
     docker.io \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for caching
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --timeout=600 --retries=3 -r requirements.txt
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser
@@ -28,6 +39,10 @@ RUN chown -R appuser:appuser /app
 
 # Expose port
 EXPOSE 5000
+
+# Set NVIDIA env vars so the runtime can find the GPU
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # Run the application
 CMD ["python", "run.py"]

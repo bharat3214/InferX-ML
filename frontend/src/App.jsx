@@ -50,7 +50,7 @@ function App() {
                             </Routes>
                         </Layout>
                     ) : (
-                        <Navigate to="/landing" />
+                        <LandingPage />
                     )
                 }
             />

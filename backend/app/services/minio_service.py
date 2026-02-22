@@ -115,6 +115,7 @@ class MinIOService:
             True if successful
         """
         try:
+            print(f"🔍 MinIO: Uploading {len(data)} bytes to '{bucket}/{object_name}'", flush=True)
             data_stream = io.BytesIO(data)
             self.client.put_object(
                 bucket,
@@ -123,9 +124,10 @@ class MinIOService:
                 length=len(data),
                 content_type=content_type
             )
+            print(f"✅ MinIO: Upload successful", flush=True)
             return True
         except S3Error as e:
-            print(f"Error uploading bytes: {e}")
+            print(f"❌ MinIO Error uploading bytes: {e}", flush=True)
             return False
     
     def upload_stream(
@@ -224,13 +226,15 @@ class MinIOService:
             Bytes content or None if failed
         """
         try:
+            print(f"🔍 MinIO: Getting object '{object_name}' from bucket '{bucket}'", flush=True)
             response = self.client.get_object(bucket, object_name)
             data = response.read()
             response.close()
             response.release_conn()
+            print(f"✅ MinIO: Successfully downloaded {len(data)} bytes", flush=True)
             return data
         except S3Error as e:
-            print(f"Error downloading bytes: {e}")
+            print(f"❌ MinIO Error downloading '{object_name}' from '{bucket}': {e}", flush=True)
             return None
     
     def download_json(

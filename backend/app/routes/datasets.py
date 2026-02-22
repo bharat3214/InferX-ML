@@ -115,6 +115,86 @@ def upload_dataset():
             dataset.profile_status = 'failed'
             db.session.commit()
     
+    # For ZIP files, check if it's an image dataset (folder-per-class structure)
+    elif file_type == 'zip':
+        try:
+            import zipfile
+            import io
+            
+            IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp', '.tiff'}
+            
+            with zipfile.ZipFile(io.BytesIO(file_content), 'r') as zf:
+                # Get all file entries (skip directories and hidden files)
+                all_entries = [
+                    name for name in zf.namelist()
+                    if not name.endswith('/') and not name.split('/')[-1].startswith('.')
+                ]
+                
+                # Detect folder-per-class structure:
+                # Expected: root_folder/class_name/image.jpg OR class_name/image.jpg
+                class_counts = {}
+                class_samples = {}
+                
+                for entry in all_entries:
+                    parts = entry.split('/')
+                    # Skip files not in a subfolder
+                    if len(parts) < 2:
+                        continue
+                    
+                    # Get file extension
+                    ext = '.' + parts[-1].rsplit('.', 1)[-1].lower() if '.' in parts[-1] else ''
+                    if ext not in IMAGE_EXTENSIONS:
+                        continue
+                    
+                    # Determine class name (handle optional root folder)
+                    # If structure is root/class/img.jpg → class is parts[-2]
+                    # If structure is class/img.jpg → class is parts[0]
+                    if len(parts) == 2:
+                        class_name = parts[0]
+                    elif len(parts) == 3:
+                        class_name = parts[1]
+                    else:
+                        # Deeper nesting — use second-to-last folder
+                        class_name = parts[-2]
+                    
+                    # Skip __MACOSX and other system folders
+                    if class_name.startswith('__') or class_name.startswith('.'):
+                        continue
+                    
+                    class_counts[class_name] = class_counts.get(class_name, 0) + 1
+                    if class_name not in class_samples:
+                        class_samples[class_name] = []
+                    if len(class_samples[class_name]) < 3:
+                        class_samples[class_name].append(parts[-1])
+                
+                if class_counts and len(class_counts) >= 2:
+                    # It's an image classification dataset
+                    total_images = sum(class_counts.values())
+                    dataset.data_type = 'image'
+                    dataset.file_type = 'image_zip'
+                    dataset.num_rows = total_images
+                    dataset.num_columns = len(class_counts)  # num classes
+                    dataset.column_info = {
+                        'classes': list(class_counts.keys()),
+                        'counts': class_counts,
+                        'total_images': total_images,
+                        'num_classes': len(class_counts),
+                        'samples': class_samples,
+                    }
+                    dataset.profile_status = 'completed'
+                    print(f"📸 Image dataset detected: {len(class_counts)} classes, {total_images} images")
+                else:
+                    # ZIP but not a recognized image dataset
+                    dataset.data_type = 'unknown'
+                    dataset.profile_status = 'completed'
+                    print(f"📦 ZIP uploaded but not recognized as image dataset")
+                
+                db.session.commit()
+        except Exception as e:
+            print(f"ZIP profiling failed: {e}")
+            dataset.profile_status = 'failed'
+            db.session.commit()
+    
     return jsonify({
         'message': 'Dataset uploaded successfully',
         'dataset': dataset.to_dict()

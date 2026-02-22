@@ -15,7 +15,8 @@ import {
     Database,
     Zap,
     BarChart3,
-    Terminal
+    Terminal,
+    ImageIcon
 } from 'lucide-react'
 import { datasetsApi, trainingApi } from '../services/api'
 import LearningTimeline from '../components/LearningTimeline'
@@ -56,6 +57,12 @@ export default function Training() {
     const columns = profileData?.data?.column_info
         ? Object.keys(profileData.data.column_info)
         : []
+
+    // Detect if this is an image dataset
+    const isImageDataset = selectedDatasetInfo?.data_type === 'image'
+    const imageClasses = isImageDataset && selectedDatasetInfo?.column_info
+        ? selectedDatasetInfo.column_info
+        : null
 
     // Polling for status
     const { data: statusData } = useQuery({
@@ -131,8 +138,8 @@ export default function Training() {
         startTrainingMutation.mutate({
             dataset_id: parseInt(selectedDataset),
             name: experimentName.trim(),
-            target_column: targetColumn || null,
-            goal_description: goalDescription
+            target_column: isImageDataset ? null : (targetColumn || null),
+            goal_description: isImageDataset ? 'Image classification' : goalDescription
         })
     }
 
@@ -219,109 +226,147 @@ export default function Training() {
                             <option value="">Select a dataset...</option>
                             {datasets.map((dataset) => (
                                 <option key={dataset.id} value={dataset.id}>
-                                    {dataset.name} ({dataset.num_rows?.toLocaleString()} rows)
+                                    {dataset.name} ({dataset.data_type === 'image'
+                                        ? `${dataset.num_rows?.toLocaleString()} images · ${dataset.num_columns} classes`
+                                        : `${dataset.num_rows?.toLocaleString()} rows`})
                                 </option>
                             ))}
                         </select>
                     </div>
 
-                    {/* 3. AI Goal Analysis */}
-                    <div className={`ai-section ${!selectedDataset ? 'section-disabled' : ''}`}>
-                        <label className="label">
-                            <Sparkles size={14} />
-                            AI Goal Analysis
-                        </label>
-                        <div className="ai-input-row">
-                            <textarea
-                                className="input textarea"
-                                value={aiPrompt}
-                                onChange={(e) => setAiPrompt(e.target.value)}
-                                placeholder="e.g., Predict which products need restocking..."
-                                rows={2}
-                                disabled={!selectedDataset || isTraining || isAnalyzing}
-                            />
-                            <button
-                                className="btn btn-secondary ai-analyze-btn"
-                                onClick={handleAnalyzeWithAI}
-                                disabled={!selectedDataset || !aiPrompt.trim() || isAnalyzing || isTraining}
-                            >
-                                {isAnalyzing ? (
-                                    <div className="spinner" style={{ width: 14, height: 14 }}></div>
-                                ) : (
-                                    <Wand2 size={14} />
-                                )}
-                                {isAnalyzing ? 'Analyzing...' : 'Analyze'}
-                            </button>
+                    {/* ── Image Dataset: Class Gallery ── */}
+                    {isImageDataset && imageClasses && (
+                        <div className="image-classes-panel">
+                            <label className="label">
+                                <ImageIcon size={14} />
+                                Image Classes Detected
+                            </label>
+                            <div className="image-class-gallery">
+                                {imageClasses.classes?.map((cls) => {
+                                    const count = imageClasses.counts?.[cls] || 0
+                                    const maxCount = Math.max(...Object.values(imageClasses.counts || {}))
+                                    const pct = maxCount > 0 ? (count / maxCount) * 100 : 0
+                                    return (
+                                        <div key={cls} className="image-class-card">
+                                            <div className="class-info">
+                                                <span className="class-name">{cls}</span>
+                                                <span className="class-count">{count} images</span>
+                                            </div>
+                                            <div className="class-bar-track">
+                                                <div className="class-bar-fill" style={{ width: `${pct}%` }} />
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            <div className="image-summary">
+                                <span>📊 {imageClasses.total_images} total images · {imageClasses.num_classes} classes</span>
+                                <span>🧠 Models: MobileNetV2, EfficientNet-B0</span>
+                            </div>
                         </div>
-                        <p className="form-hint">Let AI suggest the best target column</p>
+                    )}
 
-                        {/* AI Analysis Results */}
-                        {aiAnalysis && (
-                            <div className="ai-analysis-result">
-                                <div className="ai-result-header">
-                                    <Sparkles size={16} className="text-primary" />
-                                    <span>AI Recommendation</span>
+                    {/* ── Tabular Dataset Config ── */}
+                    {!isImageDataset && (
+                        <>
+                            <div className={`ai-section ${!selectedDataset ? 'section-disabled' : ''}`}>
+                                <label className="label">
+                                    <Sparkles size={14} />
+                                    AI Goal Analysis
+                                </label>
+                                <div className="ai-input-row">
+                                    <textarea
+                                        className="input textarea"
+                                        value={aiPrompt}
+                                        onChange={(e) => setAiPrompt(e.target.value)}
+                                        placeholder="e.g., Predict which products need restocking..."
+                                        rows={2}
+                                        disabled={!selectedDataset || isTraining || isAnalyzing}
+                                    />
+                                    <button
+                                        className="btn btn-secondary ai-analyze-btn"
+                                        onClick={handleAnalyzeWithAI}
+                                        disabled={!selectedDataset || !aiPrompt.trim() || isAnalyzing || isTraining}
+                                    >
+                                        {isAnalyzing ? (
+                                            <div className="spinner" style={{ width: 14, height: 14 }}></div>
+                                        ) : (
+                                            <Wand2 size={14} />
+                                        )}
+                                        {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                                    </button>
                                 </div>
-                                <div className="ai-result-content">
-                                    <div className="ai-result-item">
-                                        <strong>Target:</strong>
-                                        <span className="ai-target-badge">{aiAnalysis.suggested_target}</span>
-                                    </div>
-                                    <div className="ai-result-item">
-                                        <strong>Type:</strong>
-                                        <span className="ai-problem-badge">{aiAnalysis.problem_type}</span>
-                                    </div>
-                                    {aiAnalysis.confidence && (
-                                        <div className="ai-result-item">
-                                            <strong>Confidence:</strong>
-                                            <span>{(aiAnalysis.confidence * 100).toFixed(0)}%</span>
-                                        </div>
-                                    )}
-                                    <div className="ai-reasoning">
-                                        <strong>Reasoning:</strong>
-                                        <p>{aiAnalysis.reasoning}</p>
-                                    </div>
-                                    {aiAnalysis.preprocessing_suggestions?.length > 0 && (
-                                        <div className="ai-suggestions">
-                                            <strong>Tips:</strong>
-                                            <ul>
-                                                {aiAnalysis.preprocessing_suggestions.map((tip, i) => (
-                                                    <li key={i}>{tip}</li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                                <p className="form-hint">Let AI suggest the best target column</p>
 
-                        {analysisError && (
-                            <div className="ai-error">
-                                <AlertCircle size={14} />
-                                <span>{analysisError}</span>
-                            </div>
-                        )}
-                    </div>
+                                {/* AI Analysis Results */}
+                                {aiAnalysis && (
+                                    <div className="ai-analysis-result">
+                                        <div className="ai-result-header">
+                                            <Sparkles size={16} className="text-primary" />
+                                            <span>AI Recommendation</span>
+                                        </div>
+                                        <div className="ai-result-content">
+                                            <div className="ai-result-item">
+                                                <strong>Target:</strong>
+                                                <span className="ai-target-badge">{aiAnalysis.suggested_target}</span>
+                                            </div>
+                                            <div className="ai-result-item">
+                                                <strong>Type:</strong>
+                                                <span className="ai-problem-badge">{aiAnalysis.problem_type}</span>
+                                            </div>
+                                            {aiAnalysis.confidence && (
+                                                <div className="ai-result-item">
+                                                    <strong>Confidence:</strong>
+                                                    <span>{(aiAnalysis.confidence * 100).toFixed(0)}%</span>
+                                                </div>
+                                            )}
+                                            <div className="ai-reasoning">
+                                                <strong>Reasoning:</strong>
+                                                <p>{aiAnalysis.reasoning}</p>
+                                            </div>
+                                            {aiAnalysis.preprocessing_suggestions?.length > 0 && (
+                                                <div className="ai-suggestions">
+                                                    <strong>Tips:</strong>
+                                                    <ul>
+                                                        {aiAnalysis.preprocessing_suggestions.map((tip, i) => (
+                                                            <li key={i}>{tip}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
-                    {/* 4. Target Column (Optional — not needed for all training types) */}
-                    <div className="form-group">
-                        <label className="label">
-                            <Target size={14} />
-                            Target Column <span className="optional-tag">Optional</span>
-                        </label>
-                        <select
-                            className="input"
-                            value={targetColumn}
-                            onChange={(e) => setTargetColumn(e.target.value)}
-                            disabled={!selectedDataset || isTraining}
-                        >
-                            <option value="">{selectedDataset ? 'None (auto-detect or unsupervised)' : 'Select a dataset first...'}</option>
-                            {columns.map((col) => (
-                                <option key={col} value={col}>{col}</option>
-                            ))}
-                        </select>
-                        <p className="form-hint">Select only for supervised learning (classification / regression)</p>
-                    </div>
+                                {analysisError && (
+                                    <div className="ai-error">
+                                        <AlertCircle size={14} />
+                                        <span>{analysisError}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 4. Target Column (Optional — not needed for all training types) */}
+                            <div className="form-group">
+                                <label className="label">
+                                    <Target size={14} />
+                                    Target Column <span className="optional-tag">Optional</span>
+                                </label>
+                                <select
+                                    className="input"
+                                    value={targetColumn}
+                                    onChange={(e) => setTargetColumn(e.target.value)}
+                                    disabled={!selectedDataset || isTraining}
+                                >
+                                    <option value="">{selectedDataset ? 'None (auto-detect or unsupervised)' : 'Select a dataset first...'}</option>
+                                    {columns.map((col) => (
+                                        <option key={col} value={col}>{col}</option>
+                                    ))}
+                                </select>
+                                <p className="form-hint">Select only for supervised learning (classification / regression)</p>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* ═══ RIGHT PANEL: Logs + Model Progress ═══ */}
