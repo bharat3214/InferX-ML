@@ -1,6 +1,7 @@
 """
 Image Classification Module
 Supports: MobileNet, EfficientNet transfer learning
+GPU: Automatically uses GPU if available, falls back to CPU.
 """
 import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
@@ -19,6 +20,14 @@ try:
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
+
+# ── GPU auto-configuration ──────────────────────────────────────
+try:
+    from ml_engine.utils.gpu_utils import configure_tensorflow_gpu, log_gpu_info
+    if TENSORFLOW_AVAILABLE:
+        configure_tensorflow_gpu()
+except ImportError:
+    pass  # utils not available (e.g. standalone use)
 
 
 class ImageClassifier:
@@ -84,7 +93,7 @@ class ImageClassifier:
         self.history_ = None
         self.input_size_ = self.MODELS[model_name]['input_size']
     
-    def build_model(self, num_classes: int) -> Model:
+    def build_model(self, num_classes: int) -> 'Model':
         """
         Build transfer learning model
         
@@ -158,6 +167,12 @@ class ImageClassifier:
         Returns:
             self
         """
+        # Log GPU status at training start
+        try:
+            log_gpu_info()
+        except Exception:
+            pass
+
         # Determine number of classes
         if self.num_classes is None:
             self.num_classes = len(np.unique(y))
@@ -244,6 +259,12 @@ class ImageClassifier:
         Returns:
             self
         """
+        # Log GPU status at training start
+        try:
+            log_gpu_info()
+        except Exception:
+            pass
+
         # Get classes from directory
         self.classes_ = sorted(os.listdir(train_dir))
         self.num_classes = len(self.classes_)
@@ -459,12 +480,36 @@ class ImageClassifier:
     
     def save(self, path: str):
         """Save model"""
+        print(f"DEBUG: ImageClassifier.save called with path={path}", flush=True)
+        print(f"DEBUG: self.model_ type: {type(self.model_)}", flush=True)
+        
         if self.model_ is not None:
-            self.model_.save(path)
+            try:
+                self.model_.save(path)
+                print("DEBUG: self.model_.save() successful", flush=True)
+            except AttributeError:
+                print("DEBUG: .save() method missing, trying keras.models.save_model", flush=True)
+                try:
+                    from tensorflow.keras.models import save_model
+                    save_model(self.model_, path)
+                    print("DEBUG: keras.models.save_model() successful", flush=True)
+                except Exception as e:
+                    print(f"DEBUG: Fallback save failed: {e}", flush=True)
+                    raise e
+            except Exception as e:
+                print(f"DEBUG: self.model_.save() failed: {e}", flush=True)
+                raise e
             
             # Save metadata
             import json
-            meta_path = path.replace('.h5', '_meta.json').replace('.keras', '_meta.json')
+            if path.endswith('.h5'):
+                meta_path = path.replace('.h5', '_meta.json')
+            elif path.endswith('.keras'):
+                meta_path = path.replace('.keras', '_meta.json')
+            else:
+                meta_path = path + '_meta.json'
+            
+            print(f"DEBUG: Saving metadata to {meta_path}", flush=True)
             with open(meta_path, 'w') as f:
                 json.dump({
                     'classes': self.classes_,

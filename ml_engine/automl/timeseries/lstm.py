@@ -1,6 +1,7 @@
 """
 LSTM Time-Series Forecasting
 Deep learning approach using LSTM networks
+GPU: Automatically uses GPU if available, falls back to CPU.
 """
 import numpy as np
 import pandas as pd
@@ -17,6 +18,14 @@ try:
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
+
+# ── GPU auto-configuration ──────────────────────────────────────
+try:
+    from ml_engine.utils.gpu_utils import configure_tensorflow_gpu, log_gpu_info
+    if TENSORFLOW_AVAILABLE:
+        configure_tensorflow_gpu()
+except ImportError:
+    pass  # utils not available (e.g. standalone use)
 
 
 class LSTMForecaster:
@@ -85,6 +94,12 @@ class LSTMForecaster:
         Returns:
             self
         """
+        # Log GPU status at training start
+        try:
+            log_gpu_info()
+        except Exception:
+            pass
+
         # Ensure 2D
         if len(data.shape) == 1:
             data = data.reshape(-1, 1)
@@ -210,7 +225,7 @@ class LSTMForecaster:
         
         return np.array(X), np.array(y)
     
-    def _build_model(self) -> keras.Model:
+    def _build_model(self) -> 'keras.Model':
         """Build LSTM model"""
         model = Sequential()
         

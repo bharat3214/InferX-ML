@@ -17,9 +17,12 @@ imbalanced-learn==0.11.0
 prophet==1.1.5
 statsmodels==0.14.0
 
-# Deep Learning
+# Deep Learning (GPU auto-detected via system CUDA libraries)
 tensorflow==2.15.0
 keras==3.0.0
+
+# GPU Monitoring
+pynvml>=11.5.0
 
 # Computer Vision
 pillow==10.1.0

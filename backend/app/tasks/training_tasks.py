@@ -44,6 +44,14 @@ def train_model_task(self, experiment_id: int) -> Dict[str, Any]:
             experiment.status = 'training'
             db.session.commit()
             
+            # Log GPU availability for this training job
+            try:
+                from ml_engine.utils.gpu_utils import log_gpu_info
+                gpu_info = log_gpu_info()
+            except Exception:
+                gpu_info = None
+                print("[Training] GPU detection skipped — ml_engine.utils not available", flush=True)
+            
             # Get dataset
             dataset = Dataset.query.get(experiment.dataset_id)
             if not dataset:

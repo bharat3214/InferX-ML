@@ -4,6 +4,9 @@ InferX-ML Streamlit Application
 Dynamic model loading and prediction UI
 Version: 1.1 (Dynamic Execution)
 """
+import sys
+sys.path.append('/app')
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -278,10 +281,14 @@ def run_legacy_ui(temp_dir):
     with st.sidebar:
         st.header("📊 Model Info")
         if model_info:
-            st.metric("Algorithm", model_info.get('best_algorithm', 'Unknown'))
-            st.metric("Score", f"{model_info.get('best_score', 0):.2%}")
+            st.metric("Algorithm", model_info.get('best_algorithm', model_info.get('model_name', 'Unknown')))
+            st.metric("Score", f"{model_info.get('best_score', model_info.get('accuracy', 0)):.2%}")
             st.metric("Target", model_info.get('target_column', 'Unknown'))
-            st.metric("Features", model_info.get('num_features', 0))
+            
+            if 'num_features' in model_info:
+                st.metric("Features", model_info.get('num_features', 0))
+            elif 'num_classes' in model_info:
+                 st.metric("Classes", model_info.get('num_classes', 0))
         
         st.divider()
         if st.button("🔄 Choose Different Model"):
@@ -290,82 +297,149 @@ def run_legacy_ui(temp_dir):
             except AttributeError:
                 st.experimental_set_query_params()
             st.rerun()
-    
-    # Generate form from schema
-    st.subheader("📝 Enter Feature Values")
-    
-    if schema:
-        form_values = generate_form_from_schema(schema)
-    else:
-        st.warning("No schema available. Cannot generate form.")
-        return
-    
-    st.divider()
-    
-    # Predict button
-    if st.button("🚀 Make Prediction", use_container_width=True):
-        try:
-            # Prepare input data
-            input_df = pd.DataFrame([form_values])
+
+    # CHECK FOR IMAGE CLASSIFIER
+    # We can check for specific methods or metadata
+    is_image_model = False
+    if hasattr(model, 'predict_with_label') or \
+       (model_info and model_info.get('problem_type') == 'image_classification'):
+        is_image_model = True
+
+    if is_image_model:
+        st.subheader("🖼️ Image Classification")
+        st.info(f"Model trained to recognize: {', '.join(model_info.get('class_names', []))}")
+        
+        uploaded_file = st.file_uploader("Upload an image", type=['jpg', 'jpeg', 'png'])
+        
+        if uploaded_file is not None:
+            # Display image
+            from PIL import Image
+            image = Image.open(uploaded_file)
+            st.image(image, caption='Uploaded Image', use_column_width=True)
             
-            # Handle categorical encoding for older models that don't have CombinedPreprocessor
-            def encode_categorical(df):
-                """Encode categorical columns as numeric for models without proper preprocessor"""
-                from sklearn.preprocessing import LabelEncoder
-                df_encoded = df.copy()
-                for col in df_encoded.columns:
-                    if df_encoded[col].dtype == 'object' or isinstance(df_encoded[col].iloc[0], str):
-                        # Simple encoding: convert to category codes
-                        try:
-                            df_encoded[col] = pd.Categorical(df_encoded[col]).codes
-                        except:
-                            df_encoded[col] = 0
-                return df_encoded
-            
-            # Apply preprocessor if available
-            if preprocessor is not None:
-                try:
-                    # Try using preprocessor directly
-                    input_processed = preprocessor.transform(input_df)
-                except (ValueError, TypeError) as e:
-                    # Fallback: encode categorical columns first, then apply scaler
-                    st.info("Using fallback encoding for categorical features...")
-                    input_encoded = encode_categorical(input_df)
+            if st.button("🚀 Classify Image", use_container_width=True):
+                with st.spinner("Analyzing..."):
                     try:
-                        input_processed = preprocessor.transform(input_encoded)
+                        # Save to temp file for preprocessor
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+                            image.convert('RGB').save(tmp.name)
+                            tmp_path = tmp.name
+                        
+                        # Preprocess
+                        # If we have the original ImagePreprocessor class instance
+                        if hasattr(model, 'input_size_'):
+                            # It's likely our ImageClassifier class
+                            import numpy as np
+                            # Re-implement simple preprocessing if preprocessor missing
+                            img_rgb = image.convert('RGB')
+                            img_resized = img_rgb.resize(model.input_size_)
+                            img_array = np.array(img_resized) / 255.0
+                            img_array = (img_array - np.array([0.485, 0.456, 0.406])) / np.array([0.229, 0.224, 0.225])
+                            img_batch = np.expand_dims(img_array, axis=0)
+                            
+                            # Predict
+                            predictions = model.predict_with_label(img_batch)
+                            result = predictions[0]
+                            
+                            # Display result
+                            st.markdown(f'''
+                                <div class="prediction-result">
+                                    <div>Predicted: <strong>{result['class']}</strong></div>
+                                    <div class="confidence-badge">Confidence: {result['confidence']:.1%}</div>
+                                </div>
+                            ''', unsafe_allow_html=True)
+                            
+                            # Show all probabilities
+                            st.bar_chart(result['all_probabilities'])
+                            
+                        else:
+                            st.error("Model format not recognized for image classification")
+                            
+                        # Cleanup
+                        os.unlink(tmp_path)
+                        
+                    except Exception as e:
+                        st.error(f"Prediction failed: {e}")
+                        import traceback
+                        st.text(traceback.format_exc())
+
+    else:
+        # === EXISTING TABULAR LOGIC ===
+        # Generate form from schema
+        st.subheader("📝 Enter Feature Values")
+        
+        if schema:
+            form_values = generate_form_from_schema(schema)
+        else:
+            st.warning("No schema available. Cannot generate form.")
+            return
+        
+        st.divider()
+        
+        # Predict button
+        if st.button("🚀 Make Prediction", use_container_width=True):
+            try:
+                # Prepare input data
+                input_df = pd.DataFrame([form_values])
+                
+                # Handle categorical encoding for older models that don't have CombinedPreprocessor
+                def encode_categorical(df):
+                    """Encode categorical columns as numeric for models without proper preprocessor"""
+                    from sklearn.preprocessing import LabelEncoder
+                    df_encoded = df.copy()
+                    for col in df_encoded.columns:
+                        if df_encoded[col].dtype == 'object' or isinstance(df_encoded[col].iloc[0], str):
+                            # Simple encoding: convert to category codes
+                            try:
+                                df_encoded[col] = pd.Categorical(df_encoded[col]).codes
+                            except:
+                                df_encoded[col] = 0
+                    return df_encoded
+                
+                # Apply preprocessor if available
+                if preprocessor is not None:
+                    try:
+                        # Try using preprocessor directly
+                        input_processed = preprocessor.transform(input_df)
+                    except (ValueError, TypeError) as e:
+                        # Fallback: encode categorical columns first, then apply scaler
+                        st.info("Using fallback encoding for categorical features...")
+                        input_encoded = encode_categorical(input_df)
+                        try:
+                            input_processed = preprocessor.transform(input_encoded)
+                        except:
+                            # Last resort: just use encoded values
+                            input_processed = input_encoded.values
+                else:
+                    # No preprocessor - try to encode categoricals
+                    input_processed = encode_categorical(input_df).values
+                
+                # Make prediction
+                prediction = model.predict(input_processed)[0]
+                
+                # Get probability if available
+                probability = None
+                if hasattr(model, 'predict_proba'):
+                    try:
+                        proba = model.predict_proba(input_processed)[0]
+                        probability = max(proba)
                     except:
-                        # Last resort: just use encoded values
-                        input_processed = input_encoded.values
-            else:
-                # No preprocessor - try to encode categoricals
-                input_processed = encode_categorical(input_df).values
-            
-            # Make prediction
-            prediction = model.predict(input_processed)[0]
-            
-            # Get probability if available
-            probability = None
-            if hasattr(model, 'predict_proba'):
-                try:
-                    proba = model.predict_proba(input_processed)[0]
-                    probability = max(proba)
-                except:
-                    pass
-            
-            # Display result
-            st.markdown(f'''
-                <div class="prediction-result">
-                    <div>Predicted: <strong>{prediction}</strong></div>
-                    {f'<div class="confidence-badge">Confidence: {probability:.1%}</div>' if probability else ''}
-                </div>
-            ''', unsafe_allow_html=True)
-            
-            # Show input summary
-            with st.expander("📋 Input Summary"):
-                st.json(form_values)
-            
-        except Exception as e:
-            st.error(f"Prediction failed: {str(e)}")
+                        pass
+                
+                # Display result
+                st.markdown(f'''
+                    <div class="prediction-result">
+                        <div>Predicted: <strong>{prediction}</strong></div>
+                        {f'<div class="confidence-badge">Confidence: {probability:.1%}</div>' if probability else ''}
+                    </div>
+                ''', unsafe_allow_html=True)
+                
+                # Show input summary
+                with st.expander("📋 Input Summary"):
+                    st.json(form_values)
+                
+            except Exception as e:
+                st.error(f"Prediction failed: {str(e)}")
 
 
 def main():

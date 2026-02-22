@@ -2,6 +2,10 @@
 # InferX-ML Backend Dependencies
 # ======================
 
+# PyTorch CUDA 11.8 index for GPU support
+--extra-index-url https://download.pytorch.org/whl/cu118
+
+
 # Core Framework
 flask==3.0.0
 flask-cors==4.0.0
@@ -37,8 +41,12 @@ prophet==1.1.5
 statsmodels==0.14.0
 
 # Machine Learning - Deep Learning
+# GPU auto-detected via CUDA libraries in Docker base image (nvidia/cuda)
 tensorflow==2.15.0
-# keras is included in tensorflow 2.15.0, no separate install needed
+nvidia-cudnn-cu12==8.9.7.29
+
+# GPU Monitoring
+pynvml>=11.5.0
 
 # Machine Learning - Explainability
 shap==0.44.0
@@ -47,6 +55,13 @@ lime==0.2.0.1
 # Image Processing
 pillow==10.1.0
 opencv-python==4.8.1.78
+albumentations>=1.3.1
+scipy>=1.11.0
+
+# Object Detection (YOLOv8) — GPU-enabled via CUDA 11.8
+ultralytics>=8.0.0
+torch>=2.0.0
+torchvision>=0.15.0
 
 # API & Validation
 marshmallow==3.20.1

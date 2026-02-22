@@ -1,6 +1,7 @@
 """
 Tabular Regression Module
 Supports: Linear Regression, Ridge, Random Forest, XGBoost, Gradient Boosting, SVR, KNN, Decision Tree, AdaBoost, Extra Trees, Lasso, ElasticNet, LightGBM
+GPU: Automatically uses GPU for XGBoost/LightGBM if CUDA is available.
 """
 import numpy as np
 import pandas as pd
@@ -83,16 +84,30 @@ class TabularRegressor:
     }
     
     def __init__(self):
+        # ── GPU auto-detection for tree-based models ─────────────
+        _xgb_gpu = {}
+        _lgbm_gpu = {}
+        try:
+            from ml_engine.utils.gpu_utils import get_xgboost_gpu_params, get_lightgbm_gpu_params
+            _xgb_gpu = get_xgboost_gpu_params()
+            _lgbm_gpu = get_lightgbm_gpu_params()
+        except ImportError:
+            pass
+
         if XGBOOST_AVAILABLE:
+            xgb_params = {'n_estimators': 100, 'random_state': 42}
+            xgb_params.update(_xgb_gpu)  # adds GPU params if available
             self.MODELS['xgboost'] = {
                 'class': XGBRegressor,
-                'params': {'n_estimators': 100, 'random_state': 42}
+                'params': xgb_params
             }
         
         if LIGHTGBM_AVAILABLE:
+            lgbm_params = {'n_estimators': 100, 'random_state': 42, 'verbose': -1}
+            lgbm_params.update(_lgbm_gpu)  # adds GPU params if available
             self.MODELS['lightgbm'] = {
                 'class': LGBMRegressor,
-                'params': {'n_estimators': 100, 'random_state': 42, 'verbose': -1}
+                'params': lgbm_params
             }
         
         self.trained_models = {}

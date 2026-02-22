@@ -207,6 +207,7 @@ def start_training():
     experiment_id = experiment.id
     file_path = dataset.file_path
     column_info = dataset.column_info
+    data_type = dataset.data_type  # 'tabular', 'image', etc.
     
     def run_training(app_instance):
         print("🧵 Training thread started...", flush=True)
@@ -214,7 +215,12 @@ def start_training():
             with app_instance.app_context():
                 print(f"🔄 Running training task for experiment {experiment_id}", flush=True)
                 print(f"📂 Dataset Path: {file_path}", flush=True)
-                _run_training_task(experiment_id, file_path, target_column, column_info)
+                print(f"📊 Data Type: {data_type}", flush=True)
+                
+                if data_type == 'image':
+                    _run_image_training_task(experiment_id, file_path, column_info)
+                else:
+                    _run_training_task(experiment_id, file_path, target_column, column_info)
         except Exception as e:
             print(f"❌ Training thread error: {e}", flush=True)
             import traceback
@@ -583,7 +589,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
             try:
                 import tempfile
                 import sys
-                sys.path.insert(0, 'c:/Users/alok2/OneDrive/Desktop/Ahem_Hack')
+                sys.path.insert(0, '/app')
                 from ml_engine.packaging.model_packager import ModelPackager, create_feature_schema
                 from app.services.minio_service import get_minio_service
                 
@@ -654,6 +660,313 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         _update_thinking_log(experiment, f"❌ Training failed: {str(e)}")
         db.session.commit()
         print(f"Training failed: {e}")
+
+
+def _run_image_training_task(experiment_id, file_path, column_info):
+    """Run image classification training using ImageClassifier (transfer learning)"""
+    import sys
+    import tempfile
+    import numpy as np
+    import json
+    
+    experiment = Experiment.query.get(experiment_id)
+    if not experiment:
+        return
+    
+    # Import ExplanationEngine
+    from app.services.explanation_engine import ExplanationEngine
+    
+    # Initialize thinking logs
+    try:
+        experiment.thinking_logs = ''
+        experiment.explanation_data = ExplanationEngine.init_explanation_data()
+        experiment.problem_type = 'image_classification'
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    
+    print(f"\n{'='*60}", flush=True)
+    print(f"🖼️  STARTING IMAGE CLASSIFICATION - Experiment #{experiment_id}", flush=True)
+    print(f"{'='*60}", flush=True)
+    
+    _update_thinking_log(experiment, "🖼️ Initializing image classification pipeline...")
+    ExplanationEngine.emit_phase(experiment, 'understanding', {'target': 'image classes'})
+    
+    try:
+        # PHASE 1: Download and extract dataset
+        _update_thinking_log(experiment, "📂 Downloading image dataset from storage...")
+        
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        file_content = minio_service.download_bytes('datasets', file_path)
+        
+        if not file_content:
+            raise Exception("Failed to download dataset from storage")
+        
+        _update_thinking_log(experiment, f"✅ Downloaded {len(file_content) / (1024*1024):.1f} MB")
+        
+        # Extract class info from column_info
+        class_names = column_info.get('classes', [])
+        num_classes = column_info.get('num_classes', len(class_names))
+        total_images = column_info.get('total_images', 0)
+        
+        _update_thinking_log(experiment, f"📊 Dataset: {total_images} images across {num_classes} classes")
+        _update_thinking_log(experiment, f"📋 Classes: {', '.join(class_names)}")
+        
+        ExplanationEngine.emit_insight(
+            experiment,
+            f"Image dataset with {num_classes} classes: {', '.join(class_names[:5])}{'...' if len(class_names) > 5 else ''}",
+            'data_analysis'
+        )
+        
+        # PHASE 2: Load and preprocess images
+        _update_thinking_log(experiment, "🔧 Loading and preprocessing images...")
+        ExplanationEngine.emit_phase(experiment, 'learning', {'features': num_classes})
+        
+        # Add ml_engine to path
+        sys.path.insert(0, '/app')
+        from ml_engine.preprocessing.image_preprocessor import ImagePreprocessor
+        from ml_engine.automl.vision.classifier import ImageClassifier
+        
+        preprocessor = ImagePreprocessor(
+            target_size=(224, 224),
+            normalize=True,
+            normalization_mode='imagenet',
+            color_mode='rgb'
+        )
+        
+        # Save zip to temp file for loading
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp_zip:
+            tmp_zip.write(file_content)
+            tmp_zip_path = tmp_zip.name
+        
+        try:
+            images, labels, loaded_class_names = preprocessor.load_from_zip(tmp_zip_path)
+        finally:
+            import os
+            os.unlink(tmp_zip_path)
+        
+        _update_thinking_log(experiment, f"✅ Loaded {len(images)} images, resized to 224×224")
+        _update_thinking_log(experiment, f"📊 Image shape: {images.shape}")
+        
+        ExplanationEngine.emit_insight(
+            experiment,
+            f"Preprocessed {len(images)} images: resized to 224×224, normalized with ImageNet statistics.",
+            'preprocessing'
+        )
+        
+        # Train/test split
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(
+            images, labels, test_size=0.2, random_state=42, stratify=labels
+        )
+        
+        _update_thinking_log(experiment, f"✂️ Split: {len(X_train)} training, {len(X_test)} test images")
+        
+        ExplanationEngine.emit_trust_data(
+            experiment, len(images), len(X_train), len(X_test),
+            'high' if len(images) >= 500 else 'medium' if len(images) >= 100 else 'low'
+        )
+        
+        # PHASE 3: Train models
+        ExplanationEngine.emit_phase(experiment, 'testing')
+        _update_thinking_log(experiment, "🧠 Training image classification models...")
+        
+        # Define models to try
+        model_configs = [
+            ('MobileNetV2', 'mobilenet'),
+            ('EfficientNet-B0', 'efficientnet_b0'),
+        ]
+        
+        best_model = None
+        best_score = -float('inf')
+        best_model_name = ''
+        all_results = []
+        total_models = len(model_configs)
+        
+        for idx, (display_name, model_key) in enumerate(model_configs, 1):
+            _update_thinking_log(experiment, f"⏳ Training model {idx}/{total_models}: {display_name}...")
+            
+            job = TrainingJob(
+                experiment_id=experiment.id,
+                model_name=display_name,
+                status='training',
+                logs=f"🚀 Starting {display_name} transfer learning...\n"
+            )
+            db.session.add(job)
+            db.session.commit()
+            
+            try:
+                ExplanationEngine.emit_model_start(experiment, display_name)
+                
+                classifier = ImageClassifier(
+                    model_name=model_key,
+                    num_classes=num_classes,
+                    freeze_base=True,
+                    dropout=0.5,
+                    learning_rate=0.001,
+                    epochs=15,
+                    batch_size=32
+                )
+                
+                classifier.fit(
+                    X_train, y_train,
+                    validation_split=0.2,
+                    class_names=loaded_class_names,
+                    augment=True,
+                    verbose=1
+                )
+                
+                # Evaluate
+                metrics = classifier.evaluate(X_test, y_test)
+                score = metrics.get('accuracy', 0)
+                
+                job.metrics = metrics
+                job.cv_score = score
+                job.status = 'completed'
+                job.logs += f"✅ Accuracy: {score:.4f}\n"
+                if 'f1_score' in metrics:
+                    job.logs += f"📊 F1 Score: {metrics['f1_score']:.4f}\n"
+                db.session.commit()
+                
+                all_results.append({
+                    'model': display_name,
+                    'score': score,
+                    'metrics': metrics
+                })
+                
+                _update_thinking_log(experiment, f"📈 {display_name}: Accuracy = {score:.4f}")
+                ExplanationEngine.emit_model_result(experiment, display_name, score, metrics, 'classification')
+                
+                if score > best_score:
+                    best_score = score
+                    best_model = classifier
+                    best_model_name = display_name
+                    
+            except Exception as e:
+                job.status = 'failed'
+                job.error_message = str(e)
+                job.logs += f"❌ Training failed: {str(e)}\n"
+                db.session.commit()
+                print(f"   ❌ {display_name}: FAILED - {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+        
+        # PHASE 4: Compare and select
+        ExplanationEngine.emit_phase(experiment, 'comparing')
+        _update_thinking_log(experiment, f"🏆 Comparing models to find best...")
+        
+        ExplanationEngine.emit_phase(experiment, 'choosing')
+        
+        experiment.status = 'completed'
+        experiment.best_model_name = best_model_name
+        experiment.best_score = float(best_score)
+        experiment.results = {
+            'all_models': all_results,
+            'best_model': best_model_name,
+            'best_score': float(best_score),
+            'problem_type': 'image_classification',
+            'class_names': loaded_class_names,
+            'num_classes': num_classes,
+            'total_images': total_images,
+            'image_size': [224, 224]
+        }
+        db.session.commit()
+        
+        _update_thinking_log(experiment, f"🏆 Best model: {best_model_name} with accuracy {best_score:.4f}")
+        
+        # PHASE 5: Package model
+        ExplanationEngine.emit_phase(experiment, 'ready')
+        ExplanationEngine.emit_final_summary(
+            experiment, best_model_name, best_score,
+            'image_classification', 'image classes', num_classes
+        )
+        
+        import os  # Ensure os is available
+        if best_model is not None:
+            _update_thinking_log(experiment, "📦 Packaging the best model for deployment...")
+            try:
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    model_save_path = f"{tmp_dir}/image_model.h5"
+                    best_model.save(model_save_path)
+                    
+                    # Create a simple metadata file
+                    import json as json_mod
+                    meta = {
+                        'problem_type': 'image_classification',
+                        'model_name': best_model_name,
+                        'accuracy': float(best_score),
+                        'class_names': loaded_class_names,
+                        'num_classes': num_classes,
+                        'image_size': [224, 224],
+                        'normalization': 'imagenet',
+                    }
+                    with open(f"{tmp_dir}/metadata.json", 'w') as f:
+                        json_mod.dump(meta, f, indent=2)
+                    
+                    # Also save as pickle for easy Python usage
+                    import joblib
+                    joblib.dump(best_model, f"{tmp_dir}/model.pkl")
+                    _update_thinking_log(experiment, "📦 Exported model as model.pkl")
+                    
+                    # Create ZIP
+                    import shutil
+                    print(f"DEBUG: Creating zip archive from {tmp_dir}", flush=True)
+                    
+                    # Create a separate temp file for the zip to avoid recursive zipping
+                    zip_tmp_fd, zip_tmp_path = tempfile.mkstemp(suffix='.zip')
+                    os.close(zip_tmp_fd)
+                    # Remove the file created by mkstemp because make_archive wants to create it
+                    os.remove(zip_tmp_path)
+                    
+                    # Use the path without extension for make_archive (it appends .zip)
+                    zip_base = zip_tmp_path.replace('.zip', '')
+                    
+                    zip_path = shutil.make_archive(zip_base, 'zip', tmp_dir)
+                    print(f"DEBUG: Zip created at {zip_path}", flush=True)
+                    
+                    # Upload to MinIO
+                    zip_filename = f"user_{experiment.user_id}/experiment_{experiment.id}/image_model_package.zip"
+                    print(f"DEBUG: Reading zip file for upload to {zip_filename}", flush=True)
+                    with open(zip_path, 'rb') as f:
+                        zip_content = f.read()
+                    print(f"DEBUG: Zip size: {len(zip_content)} bytes", flush=True)
+                    
+                    print(f"DEBUG: Uploading to MinIO bucket 'models'...", flush=True)
+                    upload_success = minio_service.upload_bytes(
+                        bucket='models',
+                        object_name=zip_filename,
+                        data=zip_content,
+                        content_type='application/zip'
+                    )
+                    print(f"DEBUG: Upload result: {upload_success}", flush=True)
+                    
+                    updated_results = dict(experiment.results or {})
+                    updated_results['model_package_path'] = zip_filename
+                    experiment.results = updated_results
+                    db.session.commit()
+                    
+                    print(f"✅ Image model package uploaded: {zip_filename}", flush=True)
+                    _update_thinking_log(experiment, "✅ Model packaged and ready for deployment!")
+            except Exception as pack_error:
+                print(f"⚠️ Model packaging failed: {pack_error}", flush=True)
+                import traceback
+                traceback.print_exc()
+        
+        print(f"\n{'='*60}", flush=True)
+        print(f"🏆 IMAGE TRAINING COMPLETE!", flush=True)
+        print(f"   Best Model: {best_model_name}", flush=True)
+        print(f"   Accuracy: {best_score:.4f}", flush=True)
+        print(f"{'='*60}\n", flush=True)
+        
+    except Exception as e:
+        experiment.status = 'failed'
+        experiment.error_message = str(e)
+        _update_thinking_log(experiment, f"❌ Image training failed: {str(e)}")
+        db.session.commit()
+        print(f"Image training failed: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
 
 @training_bp.route('/<int:job_id>/status', methods=['GET'])
