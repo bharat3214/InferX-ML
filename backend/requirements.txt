@@ -42,7 +42,7 @@ statsmodels==0.14.0
 
 # Machine Learning - Deep Learning
 # GPU auto-detected via CUDA libraries in Docker base image (nvidia/cuda)
-tensorflow==2.15.0
+tensorflow
 nvidia-cudnn-cu12==8.9.7.29
 
 # GPU Monitoring

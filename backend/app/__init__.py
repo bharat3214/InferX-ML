@@ -32,7 +32,6 @@ def create_app(config_class=Config):
     from .routes.training import training_bp
     from .routes.predictions import predictions_bp
     from .routes.models import models_bp
-    from .routes.builder import bp as builder_bp
     from .routes.system import system_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -40,7 +39,6 @@ def create_app(config_class=Config):
     app.register_blueprint(training_bp, url_prefix='/api/training')
     app.register_blueprint(predictions_bp, url_prefix='/api/predict')
     app.register_blueprint(models_bp, url_prefix='/api/models')
-    app.register_blueprint(builder_bp)  # Already has /api/builder prefix
     app.register_blueprint(system_bp, url_prefix='/api/system')
     
     # Health check endpoint
