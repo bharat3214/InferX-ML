@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api from '../services/api'
+import queryClient from '../queryClient'
 
 export const useAuthStore = create(
     persist(
@@ -56,6 +57,8 @@ export const useAuthStore = create(
                     isAuthenticated: false
                 })
                 delete api.defaults.headers.common['Authorization']
+                // Clear all react-query cached data so the next user starts fresh
+                queryClient.clear()
             },
 
             checkAuth: () => {

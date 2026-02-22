@@ -6,8 +6,133 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 from app import db
 from app.models.dataset import Dataset
+import io
+import requests as http_requests
 
 datasets_bp = Blueprint('datasets', __name__)
+
+ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'jpg', 'jpeg', 'png', 'zip'}
+
+# ── Public download URLs for sample datasets ──
+# These are free, auth-free CSV links (GitHub raw, UCI, etc.)
+# Datasets NOT listed here will return 404 — the frontend handles this
+# by opening the Kaggle page for manual download.
+SAMPLE_SOURCES = {
+    # ══════════════════════════════════════
+    # Medical & Health
+    # ══════════════════════════════════════
+    # s-med-1 (Lung Cancer): no reliable public CSV mirror — Kaggle only
+    's-med-2': {
+        'url': 'https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.data.csv',
+        'filename': 'pima_indians_diabetes.csv',
+        'name': 'Pima Indians Diabetes',
+        'description': 'NIDDK diagnostic data for diabetes prediction',
+    },
+    's-med-3': {
+        'url': 'https://raw.githubusercontent.com/jbrownlee/Datasets/master/breast-cancer-wisconsin.csv',
+        'filename': 'breast_cancer_wisconsin.csv',
+        'name': 'Breast Cancer Wisconsin (Diagnostic)',
+        'description': 'FNA cell nuclei features for malignant/benign classification',
+    },
+    's-med-4': {
+        'url': 'https://raw.githubusercontent.com/MainakRepositor/Datasets/master/drug200.csv',
+        'filename': 'drug_classification.csv',
+        'name': 'Drug Classification',
+        'description': 'Patient data to classify suitable drug type',
+    },
+    # s-med-5 (Stroke Prediction): no reliable public CSV mirror — Kaggle only
+
+    # ══════════════════════════════════════
+    # Agriculture
+    # ══════════════════════════════════════
+    's-agr-1': {
+        'url': 'https://raw.githubusercontent.com/AbhishekKandoi/Crop-Yield-Prediction-based-on-Indian-Agriculture/main/Crop%20Recommendation%20dataset.csv',
+        'filename': 'crop_recommendation.csv',
+        'name': 'Crop Recommendation Dataset',
+        'description': 'N, P, K, temperature, humidity, pH & rainfall for 22 crop recommendations',
+    },
+    # s-agr-2 (Crop Yield): no public CSV mirror — Kaggle only
+    # s-agr-3 (Plant Diseases): image dataset / ZIP — Kaggle only
+    # s-agr-4 (Rainfall India): no public CSV mirror — Kaggle only
+    # s-agr-5 (Fertilizer): no public CSV mirror — Kaggle only
+
+    # ══════════════════════════════════════
+    # Finance
+    # ══════════════════════════════════════
+    # s-fin-1 (Loan Approval): no public CSV mirror — Kaggle only
+    # s-fin-2 (Credit Card Fraud): 144 MB — too large, Kaggle only
+    # s-fin-3 (Stock Market): no public CSV mirror — Kaggle only
+    # s-fin-4 (Bank Churn): no public CSV mirror — Kaggle only
+    's-fin-5': {
+        'url': 'https://raw.githubusercontent.com/stedy/Machine-Learning-with-R-datasets/master/insurance.csv',
+        'filename': 'insurance_charges.csv',
+        'name': 'Medical Insurance Charges',
+        'description': 'Age, sex, BMI, children, smoker & region for medical cost prediction',
+    },
+
+    # ══════════════════════════════════════
+    # E-Commerce
+    # ══════════════════════════════════════
+    # All e-commerce datasets are Kaggle-only (large or proprietary)
+
+    # ══════════════════════════════════════
+    # Education
+    # ══════════════════════════════════════
+    # All education datasets: no verified public CSV mirrors — Kaggle only
+
+    # ══════════════════════════════════════
+    # Logistics
+    # ══════════════════════════════════════
+    's-log-2': {
+        'url': 'https://raw.githubusercontent.com/mwaskom/seaborn-data/master/mpg.csv',
+        'filename': 'auto_mpg.csv',
+        'name': 'Auto MPG Dataset',
+        'description': 'Car displacement, horsepower, weight & acceleration for miles-per-gallon prediction',
+    },
+    # s-log-1 (Delivery Logistics): no public CSV mirror — Kaggle only
+    # s-log-3 (Flight Price): no public CSV mirror — Kaggle only
+    # s-log-4 (Supply Chain): no public CSV mirror — Kaggle only
+    # s-log-5 (Vehicle CarDekho): no public CSV mirror — Kaggle only
+
+    # ══════════════════════════════════════
+    # Analytics
+    # ══════════════════════════════════════
+    's-ana-1': {
+        'url': 'https://raw.githubusercontent.com/MainakRepositor/Datasets/master/Mall_Customers.csv',
+        'filename': 'mall_customers.csv',
+        'name': 'Mall Customer Segmentation',
+        'description': 'Customer ID, age, gender, annual income & spending score for clustering',
+    },
+    's-ana-2': {
+        'url': 'https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv',
+        'filename': 'iris_flower_dataset.csv',
+        'name': 'Iris Flower Dataset',
+        'description': 'Classic Fisher dataset for 3 iris species classification',
+    },
+    's-ana-3': {
+        'url': 'https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv',
+        'filename': 'titanic.csv',
+        'name': 'Titanic — Machine Learning',
+        'description': 'Passenger data for survival prediction',
+    },
+    's-ana-4': {
+        'url': 'https://raw.githubusercontent.com/ageron/handson-ml2/master/datasets/housing/housing.csv',
+        'filename': 'california_housing.csv',
+        'name': 'California Housing Prices',
+        'description': '1990 census block-group data for median house value regression',
+    },
+    's-ana-5': {
+        'url': 'https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv',
+        'filename': 'red_wine_quality.csv',
+        'name': 'Red Wine Quality',
+        'description': 'Physicochemical inputs for quality score prediction',
+    },
+
+    # ══════════════════════════════════════
+    # Entertainment
+    # ══════════════════════════════════════
+    # All entertainment datasets: large or Kaggle-only
+}
 
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'jpg', 'jpeg', 'png', 'zip'}
 
@@ -168,3 +293,103 @@ def delete_dataset(dataset_id):
     db.session.commit()
     
     return jsonify({'message': 'Dataset deleted successfully'}), 200
+
+
+@datasets_bp.route('/use-sample', methods=['POST'])
+@jwt_required()
+def use_sample_dataset():
+    """Download a sample dataset and add it to the user's account"""
+    user_id = int(get_jwt_identity())
+    
+    data = request.get_json()
+    sample_id = data.get('sample_id')
+    
+    if not sample_id:
+        return jsonify({'error': 'sample_id is required'}), 400
+    
+    # Look up the sample source
+    source = SAMPLE_SOURCES.get(sample_id)
+    if not source:
+        return jsonify({'error': f'Sample dataset "{sample_id}" is not available for direct download yet. Try "View on Kaggle" to download manually.'}), 404
+    
+    # Check if user already has this dataset
+    existing = Dataset.query.filter_by(
+        user_id=user_id,
+        name=source['name']
+    ).first()
+    if existing:
+        return jsonify({
+            'message': 'Dataset already in your uploads',
+            'dataset': existing.to_dict()
+        }), 200
+    
+    # Download the CSV from public URL
+    try:
+        resp = http_requests.get(source['url'], timeout=60)
+        resp.raise_for_status()
+        file_content = resp.content
+    except Exception as e:
+        return jsonify({'error': f'Failed to download dataset: {str(e)}'}), 502
+    
+    filename = source['filename']
+    file_type = filename.rsplit('.', 1)[1].lower()
+    file_size = len(file_content)
+    
+    # Upload to MinIO
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        
+        file_path = f'{user_id}/{filename}'
+        minio_service.upload_bytes(
+            bucket='datasets',
+            object_name=file_path,
+            data=file_content,
+            content_type='text/csv'
+        )
+    except Exception as e:
+        print(f"MinIO upload failed: {e}")
+        file_path = f'local/{user_id}/{filename}'
+    
+    # Create database record
+    dataset = Dataset(
+        name=source['name'],
+        description=source.get('description', ''),
+        file_path=file_path,
+        file_type=file_type,
+        file_size=file_size,
+        user_id=user_id,
+        profile_status='pending'
+    )
+    
+    db.session.add(dataset)
+    db.session.commit()
+    
+    # Quick profiling for tabular data
+    if file_type in ['csv', 'xlsx', 'xls'] and file_size < 50 * 1024 * 1024:
+        try:
+            import pandas as pd
+            
+            if file_type == 'csv':
+                df = pd.read_csv(io.BytesIO(file_content))
+            else:
+                df = pd.read_excel(io.BytesIO(file_content))
+            
+            dataset.num_rows = len(df)
+            dataset.num_columns = len(df.columns)
+            dataset.data_type = 'tabular'
+            dataset.column_info = {
+                col: {'dtype': str(df[col].dtype), 'null_count': int(df[col].isnull().sum())}
+                for col in df.columns
+            }
+            dataset.profile_status = 'completed'
+            db.session.commit()
+        except Exception as e:
+            print(f"Profiling failed: {e}")
+            dataset.profile_status = 'failed'
+            db.session.commit()
+    
+    return jsonify({
+        'message': 'Sample dataset added to your uploads',
+        'dataset': dataset.to_dict()
+    }), 201

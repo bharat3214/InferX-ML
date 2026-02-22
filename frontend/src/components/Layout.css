@@ -1,10 +1,15 @@
 .layout {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
 }
 
 /* Sidebar */
 .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
     width: 260px;
     background: rgba(17, 17, 17, 0.95);
     backdrop-filter: blur(10px);
@@ -12,6 +17,7 @@
     display: flex;
     flex-direction: column;
     transition: width 0.3s ease;
+    z-index: 40;
 }
 
 .sidebar.collapsed {
@@ -177,8 +183,42 @@
 /* Main Content */
 .main-content {
     flex: 1;
+    margin-left: 260px;
     padding: var(--space-6);
+    height: 100vh;
+    transition: margin-left 0.3s ease;
     overflow-y: auto;
+}
+
+/* Specific override for Datasets page to handle its own scrolling */
+.main-content.page-datasets {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: var(--space-6);
+    box-sizing: border-box;
+    /* layout fix: ensure full height with padding accounted */
+}
+
+.main-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.main-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.layout-collapsed .main-content {
+    margin-left: 70px;
 }
 
 /* Responsive */

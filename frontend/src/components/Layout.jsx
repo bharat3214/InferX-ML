@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard,
     Database,
@@ -27,14 +27,22 @@ export default function Layout({ children }) {
     const [collapsed, setCollapsed] = useState(false)
     const { user, logout } = useAuthStore()
     const navigate = useNavigate()
+    const location = useLocation()
 
     const handleLogout = () => {
         logout()
         navigate('/login')
     }
 
+    // Determine page-specific class
+    const getPageClass = () => {
+        const path = location.pathname
+        if (path === '/datasets') return 'page-datasets'
+        return ''
+    }
+
     return (
-        <div className="layout">
+        <div className={`layout ${collapsed ? 'layout-collapsed' : ''}`}>
             {/* Sidebar */}
             <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
                 <div className="sidebar-header">
@@ -86,7 +94,7 @@ export default function Layout({ children }) {
             </aside>
 
             {/* Main Content */}
-            <main className="main-content">
+            <main className={`main-content ${getPageClass()}`}>
                 {children}
             </main>
         </div>

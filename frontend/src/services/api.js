@@ -57,7 +57,8 @@ export const datasetsApi = {
             onUploadProgress: (e) => onProgress?.(Math.round((e.loaded * 100) / e.total))
         }),
     delete: (id) => api.delete(`/datasets/${id}`),
-    getProfile: (id) => api.get(`/datasets/${id}/profile`)
+    getProfile: (id) => api.get(`/datasets/${id}/profile`),
+    useSample: (sampleId) => api.post('/datasets/use-sample', { sample_id: sampleId })
 }
 
 export const trainingApi = {
