@@ -4,7 +4,7 @@ Time-Series Data Preprocessor
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, Tuple, List
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 import joblib
 
 
@@ -20,7 +20,9 @@ class TimeSeriesPreprocessor:
         target_column: str = None,
         freq: str = None,  # 'D', 'H', 'W', 'M', etc.
         fill_method: str = 'ffill',
-        scale: bool = True
+        scale: bool = True,
+        use_robust_scaler: bool = True,
+        outlier_clip: bool = False
     ):
         """
         Initialize preprocessor
@@ -31,12 +33,16 @@ class TimeSeriesPreprocessor:
             freq: Resampling frequency
             fill_method: Method to fill missing values
             scale: Whether to scale the data
+            use_robust_scaler: Uses RobustScaler if True, otherwise StandardScaler
+            outlier_clip: Whether to apply 1st/99th percentile clipping
         """
         self.datetime_column = datetime_column
         self.target_column = target_column
         self.freq = freq
         self.fill_method = fill_method
         self.scale = scale
+        self.use_robust_scaler = use_robust_scaler
+        self.outlier_clip = outlier_clip
         
         # Fitted attributes
         self.scaler_ = None
@@ -68,7 +74,7 @@ class TimeSeriesPreprocessor:
         
         # Fit scaler
         if self.scale:
-            self.scaler_ = StandardScaler()
+            self.scaler_ = RobustScaler() if self.use_robust_scaler else StandardScaler()
             numeric_cols = self.feature_columns_.copy()
             if self.target_column:
                 numeric_cols.append(self.target_column)
@@ -110,6 +116,18 @@ class TimeSeriesPreprocessor:
         else:
             df = df.fillna(0)
         
+        # Outlier Clipping (Winsorization)
+        if hasattr(self, 'outlier_clip') and self.outlier_clip:
+            numeric_cols = self.feature_columns_.copy()
+            if self.target_column and self.target_column in df.columns:
+                numeric_cols.append(self.target_column)
+            
+            # Use 1st and 99th percentiles
+            for col in numeric_cols:
+                lower = df[col].quantile(0.01)
+                upper = df[col].quantile(0.99)
+                df[col] = df[col].clip(lower, upper)
+                
         # Scale
         if self.scale and self.scaler_ is not None:
             numeric_cols = self.feature_columns_.copy()
@@ -147,12 +165,13 @@ class TimeSeriesPreprocessor:
         
         return None
     
-    def create_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def create_time_features(self, df: pd.DataFrame, encode_cyclical: bool = True) -> pd.DataFrame:
         """
         Create time-based features from datetime index
         
         Args:
             df: DataFrame with datetime index
+            encode_cyclical: Whether to sine/cosine encode cyclical features (industry best practice)
             
         Returns:
             DataFrame with additional time features
@@ -160,13 +179,35 @@ class TimeSeriesPreprocessor:
         df = df.copy()
         
         if isinstance(df.index, pd.DatetimeIndex):
-            df['hour'] = df.index.hour
-            df['day_of_week'] = df.index.dayofweek
-            df['day_of_month'] = df.index.day
-            df['month'] = df.index.month
+            # Extract basic components
+            hour = df.index.hour
+            day_of_week = df.index.dayofweek
+            day_of_month = df.index.day
+            month = df.index.month
+            
+            if encode_cyclical:
+                # Sine/Cosine encoding to preserve relative ordering (e.g. Hour 23 is next to Hour 0)
+                df['hour_sin'] = np.sin(2 * np.pi * hour / 24.0)
+                df['hour_cos'] = np.cos(2 * np.pi * hour / 24.0)
+                
+                df['day_of_week_sin'] = np.sin(2 * np.pi * day_of_week / 7.0)
+                df['day_of_week_cos'] = np.cos(2 * np.pi * day_of_week / 7.0)
+                
+                # Assume 31 days roughly for generic normalization, better than not encoding
+                df['day_of_month_sin'] = np.sin(2 * np.pi * day_of_month / 31.0)
+                df['day_of_month_cos'] = np.cos(2 * np.pi * day_of_month / 31.0)
+                
+                df['month_sin'] = np.sin(2 * np.pi * month / 12.0)
+                df['month_cos'] = np.cos(2 * np.pi * month / 12.0)
+            else:
+                df['hour'] = hour
+                df['day_of_week'] = day_of_week
+                df['day_of_month'] = day_of_month
+                df['month'] = month
+                
             df['quarter'] = df.index.quarter
             df['year'] = df.index.year
-            df['is_weekend'] = df.index.dayofweek >= 5
+            df['is_weekend'] = day_of_week >= 5
             df['is_month_start'] = df.index.is_month_start
             df['is_month_end'] = df.index.is_month_end
         

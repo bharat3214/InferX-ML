@@ -45,7 +45,7 @@ class ImagePreprocessor:
         self.classes_ = []
         self.class_to_idx_ = {}
     
-    def load_image(self, path: str) -> np.ndarray:
+    def load_image(self, path: str) -> Optional[np.ndarray]:
         """
         Load and preprocess a single image
         
@@ -53,32 +53,38 @@ class ImagePreprocessor:
             path: Path to image file
             
         Returns:
-            Preprocessed image array
+            Preprocessed image array, or None if the image is corrupted
         """
-        # Load image
-        img = Image.open(path)
-        
-        # Convert color mode
-        if self.color_mode == 'rgb':
-            img = img.convert('RGB')
-        elif self.color_mode == 'grayscale':
-            img = img.convert('L')
-        
-        # Resize
-        img = img.resize(self.target_size, Image.Resampling.LANCZOS)
-        
-        # Convert to array
-        img_array = np.array(img, dtype=np.float32)
-        
-        # Add channel dimension for grayscale
-        if self.color_mode == 'grayscale' and len(img_array.shape) == 2:
-            img_array = np.expand_dims(img_array, axis=-1)
-        
-        # Normalize
-        if self.normalize:
-            img_array = self._normalize(img_array)
-        
-        return img_array
+        try:
+            # Load image
+            img = Image.open(path)
+            
+            # Convert color mode
+            if self.color_mode == 'rgb':
+                img = img.convert('RGB')
+            elif self.color_mode == 'grayscale':
+                img = img.convert('L')
+            
+            # Resize
+            img = img.resize(self.target_size, Image.Resampling.LANCZOS)
+            
+            # Convert to array
+            img_array = np.array(img, dtype=np.float32)
+            
+            # Add channel dimension for grayscale
+            if self.color_mode == 'grayscale' and len(img_array.shape) == 2:
+                img_array = np.expand_dims(img_array, axis=-1)
+            
+            # Normalize
+            if self.normalize:
+                img_array = self._normalize(img_array)
+            
+            return img_array
+            
+        except (IOError, OSError, SyntaxError) as e:
+            # Catch file IO errors, corrupted images, etc.
+            print(f"Warning: Skipping corrupted or unreadable image {path} - {str(e)}")
+            return None
     
     def _normalize(self, img: np.ndarray) -> np.ndarray:
         """Apply normalization"""
@@ -238,7 +244,7 @@ class ImagePreprocessor:
     
     def _augment_batch(self, images: np.ndarray) -> np.ndarray:
         """
-        Apply simple augmentation to batch
+        Apply advanced augmentation to batch
         
         Args:
             images: Batch of images
@@ -246,22 +252,106 @@ class ImagePreprocessor:
         Returns:
             Augmented images
         """
+        import scipy.ndimage as ndimage
         augmented = []
         
         for img in images:
-            # Random horizontal flip
+            # 1. Random horizontal flip
             if np.random.random() > 0.5:
                 img = np.fliplr(img)
             
-            # Random brightness adjustment
+            # 2. Random brightness adjustment
             if np.random.random() > 0.5:
                 brightness = np.random.uniform(0.8, 1.2)
-                img = img * brightness
+                img = np.clip(img * brightness, 0, 1 if self.normalize else 255)
+                
+            # 3. Random rotation (-15 to +15 degrees)
+            if np.random.random() > 0.5:
+                angle = np.random.uniform(-15, 15)
+                img = ndimage.rotate(img, angle, reshape=False, mode='nearest')
+                
+            # 4. Random zoom (0.9x to 1.1x)
+            if np.random.random() > 0.5:
+                zoom_factor = np.random.uniform(0.9, 1.1)
+                
+                # Apply zoom
+                h, w = img.shape[:2]
+                zh = int(np.round(h / zoom_factor))
+                zw = int(np.round(w / zoom_factor))
+                
+                # Boundaries to crop/pad
+                top = (h - zh) // 2
+                left = (w - zw) // 2
+                
+                # Zoom in (crop)
+                if zoom_factor > 1.0:
+                    zoomed = img[top:top+zh, left:left+zw]
+                    # Since we cropped, resize back to original shape
+                    if zoomed.size > 0:
+                        # Convert to uint8 for PIL, resize, then back to original dtype
+                        orig_dtype = zoomed.dtype
+                        if orig_dtype == np.float32 or orig_dtype == np.float64:
+                            pil_img = Image.fromarray(((zoomed - zoomed.min()) / (zoomed.max() - zoomed.min() + 1e-8) * 255).astype(np.uint8))
+                        else:
+                            pil_img = Image.fromarray(zoomed.astype(np.uint8))
+                        resized = np.array(pil_img.resize((w, h), Image.Resampling.LANCZOS)).astype(orig_dtype)
+                        if orig_dtype in [np.float32, np.float64] and self.normalize:
+                             img = resized / 255.0
+                        else:
+                             img = resized
+                
+                # Zoom out (pad)
+                else:
+                    # Pad the exact amount needed to reach h,w after scaling
+                    pad_h1, pad_h2 = -top, h - zh + top
+                    pad_w1, pad_w2 = -left, w - zw + left
+                    zoomed = np.pad(img, ((pad_h1, pad_h2), (pad_w1, pad_w2), (0,0)), mode='constant', constant_values=0)
+                    if zoomed.size > 0:
+                        orig_dtype = zoomed.dtype
+                        if orig_dtype == np.float32 or orig_dtype == np.float64:
+                            pil_img = Image.fromarray((np.clip(zoomed, 0, 1) * 255).astype(np.uint8) if self.normalize else np.clip(zoomed, 0, 255).astype(np.uint8))
+                        else:
+                            pil_img = Image.fromarray(zoomed.astype(np.uint8))
+                        resized = np.array(pil_img.resize((w, h), Image.Resampling.LANCZOS)).astype(orig_dtype)
+                        if orig_dtype in [np.float32, np.float64] and self.normalize:
+                             img = resized / 255.0
+                        else:
+                             img = resized
             
             augmented.append(img)
         
         return np.array(augmented)
     
+    def compute_class_weights(self, labels: np.ndarray) -> Dict[int, float]:
+        """
+        Compute class weights for imbalanced datasets
+        
+        Args:
+            labels: Array of class labels
+            
+        Returns:
+            Dictionary mapping class index to computed weight
+        """
+        n_samples = len(labels)
+        n_classes = len(self.classes_)
+        
+        # If no classes defined yet, fall back to unique labels
+        if n_classes == 0:
+            unique_labels = np.unique(labels)
+            n_classes = len(unique_labels)
+            
+        counts = np.bincount(labels)
+        
+        weights = {}
+        for i, count in enumerate(counts):
+            if count > 0:
+                # Standard balanced weight formula: n_samples / (n_classes * n_samples_of_class)
+                weights[i] = n_samples / (n_classes * count)
+            else:
+                weights[i] = 1.0  # Fallback for empty classes
+                
+        return weights
+        
     def get_preprocessing_info(self) -> Dict[str, Any]:
         """Get preprocessing configuration"""
         return {

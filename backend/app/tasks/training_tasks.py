@@ -134,6 +134,10 @@ def run_training_pipeline(
     preprocessor = TabularPreprocessor()
     
     if target_column:
+        # Industrial Best Practice: Drop rows where target is missing
+        if target_column in df.columns:
+            df = df.dropna(subset=[target_column])
+            
         X = df.drop(columns=[target_column])
         y = df[target_column]
         X_processed = preprocessor.fit_transform(X, y)
@@ -147,14 +151,18 @@ def run_training_pipeline(
     if task:
         task.update_state(state='PROGRESS', meta={'step': 'training', 'progress': 30})
     
+    config = experiment.config or {}
+    
     # Select and train model based on problem type
+    result = {}
+    
     if problem_type in ['binary_classification', 'multiclass_classification', 'classification']:
         trainer = TabularClassifier()
-        result = trainer.train(X_processed, y_processed)
+        result = trainer.train(X_processed, y_processed, config=config)
         
     elif problem_type == 'regression':
         trainer = TabularRegressor()
-        result = trainer.train(X_processed, y_processed)
+        result = trainer.train(X_processed, y_processed, config=config)
         
     elif problem_type == 'clustering':
         trainer = TabularClusterer()
@@ -168,10 +176,10 @@ def run_training_pipeline(
         
         if 'classification' in problem_type:
             trainer = TabularClassifier()
-            result = trainer.train(X_processed, y_processed)
-        elif problem_type == 'regression':
+            result = trainer.train(X_processed, y_processed, config=config)
+        elif 'regression' in problem_type:
             trainer = TabularRegressor()
-            result = trainer.train(X_processed, y_processed)
+            result = trainer.train(X_processed, y_processed, config=config)
         else:
             trainer = TabularClusterer()
             result = trainer.train(X_processed)

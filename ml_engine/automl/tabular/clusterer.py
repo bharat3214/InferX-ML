@@ -71,10 +71,18 @@ class TabularClusterer:
                     'error': str(e)
                 })
         
+        # Find the n_clusters for the best model to return
+        best_n_clusters = None
+        for res in self.results:
+            if res.get('model_name') == self.best_model_name:
+                best_n_clusters = res.get('n_clusters')
+                break
+                
         return {
             'results': self.results,
             'best_model': self.best_model_name,
-            'best_score': self.best_score
+            'best_score': self.best_score,
+            'n_clusters': best_n_clusters
         }
     
     def _train_kmeans(self, X_scaled: np.ndarray, n_clusters: int) -> Dict[str, Any]:

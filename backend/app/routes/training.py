@@ -182,6 +182,31 @@ def start_training():
     if not dataset:
         return jsonify({'error': 'Dataset not found'}), 404
     
+    # Validate Configuration (Industrial Security Best Practice)
+    config = data.get('config', {})
+    if not isinstance(config, dict):
+        return jsonify({'error': 'Config must be a JSON object'}), 400
+        
+    epochs = config.get('epochs')
+    if epochs is not None and (not isinstance(epochs, int) or epochs < 1 or epochs > 1000):
+        return jsonify({'error': 'Epochs must be an integer between 1 and 1000'}), 400
+        
+    batch_size = config.get('batch_size')
+    if batch_size is not None and (not isinstance(batch_size, int) or batch_size < 1 or batch_size > 1024):
+        return jsonify({'error': 'Batch size must be an integer between 1 and 1024'}), 400
+        
+    learning_rate = config.get('learning_rate')
+    if learning_rate is not None and (not isinstance(learning_rate, (int, float)) or learning_rate <= 0 or learning_rate > 1):
+        return jsonify({'error': 'Learning rate must be a float between 0 and 1'}), 400
+        
+    n_estimators = config.get('n_estimators')
+    if n_estimators is not None and (not isinstance(n_estimators, int) or n_estimators < 1 or n_estimators > 5000):
+        return jsonify({'error': 'n_estimators must be an integer between 1 and 5000'}), 400
+        
+    max_depth = config.get('max_depth')
+    if max_depth is not None and (not isinstance(max_depth, int) or max_depth < 1 or max_depth > 100):
+        return jsonify({'error': 'max_depth must be an integer between 1 and 100'}), 400
+    
     # Create experiment
     experiment = Experiment(
         name=name,
@@ -190,7 +215,7 @@ def start_training():
         status='training',
         user_id=user_id,
         dataset_id=dataset_id,
-        config=data.get('config', {})
+        config=config
     )
     
     db.session.add(experiment)
@@ -218,7 +243,11 @@ def start_training():
                 print(f"📊 Data Type: {data_type}", flush=True)
                 
                 if data_type == 'image':
-                    _run_image_training_task(experiment_id, file_path, column_info)
+                    config = experiment.config or {}
+                    if config.get('problem_type') == 'object_detection':
+                        _run_detection_training_task(experiment_id, file_path, column_info)
+                    else:
+                        _run_image_training_task(experiment_id, file_path, column_info)
                 else:
                     _run_training_task(experiment_id, file_path, target_column, column_info)
         except Exception as e:
@@ -381,22 +410,31 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         # PHASE 3: Testing Learning Strategies
         ExplanationEngine.emit_phase(experiment, 'testing')
         
+        # Extract overrides from custom config
+        config = experiment.config or {}
+        n_estimators = int(config.get('n_estimators', 100))
+        max_depth = config.get('max_depth')
+        if max_depth is not None: max_depth = int(max_depth)
+        epochs = config.get('epochs')
+        max_iter = int(epochs) if epochs else 1000
+        
         # Define models to try - ALL AVAILABLE ALGORITHMS
         if problem_type == 'classification':
             from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
             from sklearn.svm import SVC
             from sklearn.neighbors import KNeighborsClassifier
             from sklearn.tree import DecisionTreeClassifier
+            from sklearn.linear_model import LogisticRegression
             
             models = [
-                ('Logistic Regression', LogisticRegression(max_iter=1000, random_state=42)),
-                ('Random Forest', RandomForestClassifier(n_estimators=100, random_state=42)),
-                ('Gradient Boosting', GradientBoostingClassifier(n_estimators=100, random_state=42, max_depth=5)),
-                ('SVM', SVC(kernel='rbf', probability=True, random_state=42)),
+                ('Logistic Regression', LogisticRegression(max_iter=max_iter, random_state=42)),
+                ('Random Forest', RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
+                ('Gradient Boosting', GradientBoostingClassifier(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5)),
+                ('SVM', SVC(kernel='rbf', probability=True, random_state=42, max_iter=max_iter if epochs else -1)),
                 ('KNN', KNeighborsClassifier(n_neighbors=5)),
-                ('Decision Tree', DecisionTreeClassifier(random_state=42, max_depth=10)),
-                ('AdaBoost', AdaBoostClassifier(n_estimators=100, random_state=42)),
-                ('Extra Trees', ExtraTreesClassifier(n_estimators=100, random_state=42)),
+                ('Decision Tree', DecisionTreeClassifier(random_state=42, max_depth=max_depth if max_depth else 10)),
+                ('AdaBoost', AdaBoostClassifier(n_estimators=n_estimators, random_state=42)),
+                ('Extra Trees', ExtraTreesClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
             ]
             
             # Add XGBoost if available
@@ -415,24 +453,24 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
             
             scoring = 'accuracy'
         else:
-            from sklearn.linear_model import Lasso, ElasticNet
-            from sklearn.ensemble import GradientBoostingRegressor, AdaBoostRegressor, ExtraTreesRegressor
+            from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+            from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, AdaBoostRegressor, ExtraTreesRegressor
             from sklearn.svm import SVR
             from sklearn.neighbors import KNeighborsRegressor
             from sklearn.tree import DecisionTreeRegressor
             
             models = [
                 ('Linear Regression', LinearRegression()),
-                ('Ridge Regression', Ridge(random_state=42)),
-                ('Lasso Regression', Lasso(random_state=42, max_iter=2000)),
-                ('ElasticNet', ElasticNet(random_state=42, max_iter=2000)),
-                ('Random Forest', RandomForestRegressor(n_estimators=100, random_state=42)),
-                ('Gradient Boosting', GradientBoostingRegressor(n_estimators=100, random_state=42, max_depth=5)),
-                ('SVR', SVR(kernel='rbf')),
+                ('Ridge Regression', Ridge(random_state=42, max_iter=max_iter if epochs else None)),
+                ('Lasso Regression', Lasso(random_state=42, max_iter=max_iter if epochs else 2000)),
+                ('ElasticNet', ElasticNet(random_state=42, max_iter=max_iter if epochs else 2000)),
+                ('Random Forest', RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
+                ('Gradient Boosting', GradientBoostingRegressor(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5)),
+                ('SVR', SVR(kernel='rbf', max_iter=max_iter if epochs else -1)),
                 ('KNN', KNeighborsRegressor(n_neighbors=5)),
-                ('Decision Tree', DecisionTreeRegressor(random_state=42, max_depth=10)),
-                ('AdaBoost', AdaBoostRegressor(n_estimators=100, random_state=42)),
-                ('Extra Trees', ExtraTreesRegressor(n_estimators=100, random_state=42)),
+                ('Decision Tree', DecisionTreeRegressor(random_state=42, max_depth=max_depth if max_depth else 10)),
+                ('AdaBoost', AdaBoostRegressor(n_estimators=n_estimators, random_state=42)),
+                ('Extra Trees', ExtraTreesRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
             ]
             
             # Add XGBoost if available
@@ -799,14 +837,20 @@ def _run_image_training_task(experiment_id, file_path, column_info):
             try:
                 ExplanationEngine.emit_model_start(experiment, display_name)
                 
+                # Dynamic configurations extraction
+                config = experiment.config or {}
+                epochs = int(config.get('epochs', 15))
+                batch_size = int(config.get('batch_size', 32))
+                learning_rate = float(config.get('learning_rate', 0.001))
+                
                 classifier = ImageClassifier(
                     model_name=model_key,
                     num_classes=num_classes,
                     freeze_base=True,
                     dropout=0.5,
-                    learning_rate=0.001,
-                    epochs=15,
-                    batch_size=32
+                    learning_rate=learning_rate,
+                    epochs=epochs,
+                    batch_size=batch_size
                 )
                 
                 classifier.fit(
@@ -1078,3 +1122,249 @@ def cancel_training(job_id):
     db.session.commit()
     
     return jsonify({'message': 'Training cancelled'}), 200
+
+def _run_detection_training_task(experiment_id, file_path, column_info):
+    """Run object detection training using YOLOv8"""
+    import sys
+    import tempfile
+    import os
+    import json
+    
+    experiment = Experiment.query.get(experiment_id)
+    if not experiment:
+        return
+        
+    # Import ExplanationEngine
+    try:
+        from app.services.explanation_engine import ExplanationEngine
+    except ImportError:
+        ExplanationEngine = None
+    
+    # Initialize thinking logs
+    try:
+        experiment.thinking_logs = ''
+        if ExplanationEngine:
+            experiment.explanation_data = ExplanationEngine.init_explanation_data()
+        experiment.problem_type = 'object_detection'
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        
+    print(f"\n{'='*60}", flush=True)
+    print(f"🎯 STARTING OBJECT DETECTION - Experiment #{experiment_id}", flush=True)
+    print(f"{'='*60}", flush=True)
+    
+    _update_thinking_log(experiment, "🎯 Initializing YOLOv8 Object Detection pipeline...")
+    if ExplanationEngine:
+        ExplanationEngine.emit_phase(experiment, 'understanding', {'target': 'bounding boxes'})
+    
+    try:
+        # PHASE 1: Download dataset
+        _update_thinking_log(experiment, "📂 Downloading dataset from storage...")
+        try:
+            from app.services.minio_service import get_minio_service
+        except ImportError:
+            get_minio_service = None
+            
+        minio_service = get_minio_service() if get_minio_service else None
+        if not minio_service:
+            raise Exception("MinIO Service unavailable")
+            
+        file_content = minio_service.download_bytes('datasets', file_path)
+        
+        if not file_content:
+            raise Exception("Failed to download dataset from storage")
+            
+        _update_thinking_log(experiment, f"✅ Downloaded {len(file_content) / (1024*1024):.1f} MB")
+        
+        # PHASE 2: Load and preprocess YOLO dependencies
+        _update_thinking_log(experiment, "🔧 Validating and generating YOLO data.yaml...")
+        if ExplanationEngine:
+            ExplanationEngine.emit_phase(experiment, 'learning', {'features': 'YOLO annotations'})
+        
+        sys.path.insert(0, '/app')
+        try:
+            from ml_engine.preprocessing.detection_preprocessor import DetectionPreprocessor
+            from ml_engine.automl.vision.detector import ObjectDetector
+        except ImportError:
+            DetectionPreprocessor = None
+            ObjectDetector = None
+        
+        # We need a stable directory for YOLO to read from during the entire training run
+        process_dir = tempfile.mkdtemp(prefix="yolo_data_")
+        preprocessor = DetectionPreprocessor(data_dir=process_dir)
+        
+        # Save zip to temp file for extraction
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp_zip:
+            tmp_zip.write(file_content)
+            tmp_zip_path = tmp_zip.name
+            
+        try:
+            prep_results = preprocessor.process_zip(tmp_zip_path)
+        finally:
+            os.unlink(tmp_zip_path)
+            
+        yaml_path = prep_results['yaml_path']
+        class_names = prep_results['classes']
+        num_classes = prep_results['num_classes']
+        
+        _update_thinking_log(experiment, f"📋 Extracted YOLO dataset: {num_classes} classes mapping to {yaml_path}")
+        if ExplanationEngine:
+            ExplanationEngine.emit_insight(
+                experiment,
+                f"Validated dataset for Object Detection. Found {num_classes} classes: {', '.join(class_names[:5])}{'...' if len(class_names) > 5 else ''}",
+                'preprocessing'
+            )
+            
+            ExplanationEngine.emit_trust_data(
+                experiment, 500, 400, 100, 'high'  # Arbitrary trust data since YOLO handles its own splits
+            )
+        
+        # PHASE 3: Train YOLO
+        if ExplanationEngine:
+            ExplanationEngine.emit_phase(experiment, 'testing')
+        _update_thinking_log(experiment, "🧠 Firing up YOLOv8 engine...")
+        
+        config = experiment.config or {}
+        epochs = int(config.get('epochs', 30))
+        batch_size = int(config.get('batch_size', 16))
+        imgsz = int(config.get('img_size', 640))  # Default YOLO res
+        learning_rate = float(config.get('learning_rate', 0.01))
+        
+        model_name = "YOLOv8 Nano"
+        
+        job = TrainingJob(
+            experiment_id=experiment.id,
+            model_name=model_name,
+            status='training',
+            logs=f"🚀 Starting YOLOv8 training (Epochs: {epochs}, Batch: {batch_size}, imgsz: {imgsz})...\n"
+        )
+        db.session.add(job)
+        db.session.commit()
+        
+        try:
+            if ExplanationEngine:
+                ExplanationEngine.emit_model_start(experiment, model_name)
+            
+            project_dir = os.path.join(process_dir, 'yolo_runs')
+            
+            detector = ObjectDetector(
+                model_size='n',  # nano for speed
+                epochs=epochs,
+                batch_size=batch_size,
+                imgsz=imgsz,
+                learning_rate=learning_rate
+            )
+            
+            # Start YOLO Training Loop
+            detector.fit_from_directory(
+                data_yaml_path=yaml_path,
+                project_dir=project_dir,
+                name='experiment_run',
+                verbose=True
+            )
+            
+            # Extract metrics
+            metrics = detector.metrics_
+            score = metrics.get('mAP50-95', 0.0) # Primary YOLO metric
+            
+            job.metrics = metrics
+            job.cv_score = score
+            job.status = 'completed'
+            job.logs += f"✅ mAP50-95: {score:.4f}\n"
+            if 'mAP50' in metrics:
+                job.logs += f"📊 mAP50: {metrics['mAP50']:.4f}\n"
+            db.session.commit()
+            
+            _update_thinking_log(experiment, f"📈 {model_name}: mAP50-95 = {score:.4f}")
+            if ExplanationEngine:
+                ExplanationEngine.emit_model_result(experiment, model_name, score, metrics, 'object_detection')
+            
+            # PHASE 4: Package model
+            if ExplanationEngine:
+                ExplanationEngine.emit_phase(experiment, 'comparing')
+                ExplanationEngine.emit_phase(experiment, 'choosing')
+            
+            experiment.status = 'completed'
+            experiment.best_model_name = model_name
+            experiment.best_score = float(score)
+            experiment.results = {
+                'all_models': [{'model': model_name, 'score': score, 'metrics': metrics}],
+                'best_model': model_name,
+                'best_score': float(score),
+                'problem_type': 'object_detection',
+                'class_names': class_names,
+                'num_classes': num_classes,
+                'image_size': [imgsz, imgsz]
+            }
+            db.session.commit()
+            
+            if ExplanationEngine:
+                ExplanationEngine.emit_phase(experiment, 'ready')
+                ExplanationEngine.emit_final_summary(
+                    experiment, model_name, score,
+                    'object_detection', 'bounding boxes', num_classes
+                )
+            
+            _update_thinking_log(experiment, "📦 Packaging PyTorch weights (.pt) for deployment...")
+            
+            # Pack .pt into a zip for MinIO
+            with tempfile.TemporaryDirectory() as tmp_pkg_dir:
+                weights_path = os.path.join(tmp_pkg_dir, "best.pt")
+                detector.save(weights_path)
+                
+                # Write standard metadata alongside it
+                meta = {
+                    'problem_type': 'object_detection',
+                    'model_name': model_name,
+                    'score': float(score),
+                    'class_names': class_names,
+                    'num_classes': num_classes,
+                    'image_size': [imgsz, imgsz],
+                    'framework': 'ultralytics'
+                }
+                with open(os.path.join(tmp_pkg_dir, 'metadata.json'), 'w') as f:
+                    json.dump(meta, f, indent=2)
+                    
+                import shutil
+                zip_tmp_fd, zip_tmp_path = tempfile.mkstemp(suffix='.zip')
+                os.close(zip_tmp_fd)
+                os.remove(zip_tmp_path)
+                zip_base = zip_tmp_path.replace('.zip', '')
+                
+                zip_path = shutil.make_archive(zip_base, 'zip', tmp_pkg_dir)
+                
+                zip_filename = f"user_{experiment.user_id}/experiment_{experiment.id}/detection_model_package.zip"
+                with open(zip_path, 'rb') as f:
+                    zip_content = f.read()
+                    
+                minio_service.upload_bytes(
+                    bucket='models',
+                    object_name=zip_filename,
+                    data=zip_content,
+                    content_type='application/zip'
+                )
+                
+                updated_results = dict(experiment.results or {})
+                updated_results['model_package_path'] = zip_filename
+                experiment.results = updated_results
+                db.session.commit()
+                
+                print(f"✅ Object Detection package uploaded: {zip_filename}", flush=True)
+                _update_thinking_log(experiment, "✅ Model packaged and ready for deployment!")
+                
+        except Exception as e:
+            job.status = 'failed'
+            job.error_message = str(e)
+            job.logs += f"❌ Training failed: {str(e)}\n"
+            db.session.commit()
+            raise e
+            
+    except Exception as e:
+        experiment.status = 'failed'
+        experiment.error_message = str(e)
+        _update_thinking_log(experiment, f"❌ Training failed: {str(e)}")
+        db.session.commit()
+        print(f"Detection Training failed: {e}")
+        import traceback
+        traceback.print_exc()

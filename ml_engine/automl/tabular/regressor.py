@@ -122,10 +122,21 @@ class TabularRegressor:
         X: pd.DataFrame,
         y: pd.Series,
         models_to_train: Optional[List[str]] = None,
-        cv_folds: int = 5
+        cv_folds: int = 5,
+        config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Train multiple models and select the best one"""
         
+        # Apply config overrides
+        if config:
+            for model_name, model_info in self.MODELS.items():
+                if 'n_estimators' in model_info['params'] and config.get('n_estimators'):
+                    model_info['params']['n_estimators'] = int(config['n_estimators'])
+                if 'max_depth' in model_info['params'] and config.get('max_depth'):
+                    model_info['params']['max_depth'] = int(config['max_depth'])
+                if 'max_iter' in model_info['params'] and config.get('epochs'):
+                    model_info['params']['max_iter'] = int(config['epochs'])
+                    
         if models_to_train is None:
             models_to_train = list(self.MODELS.keys())
         

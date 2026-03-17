@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     docker.io \
+    libgl1 \
+    libglib2.0-0 \
     && ln -sf /usr/bin/python3.10 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/*

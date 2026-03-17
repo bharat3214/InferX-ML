@@ -16,7 +16,8 @@ import {
     Zap,
     BarChart3,
     Terminal,
-    ImageIcon
+    ImageIcon,
+    Settings
 } from 'lucide-react'
 import { datasetsApi, trainingApi } from '../services/api'
 import LearningTimeline from '../components/LearningTimeline'
@@ -33,6 +34,19 @@ export default function Training() {
     const [isTraining, setIsTraining] = useState(false)
     const [currentJob, setCurrentJob] = useState(null)
     const logsEndRef = useRef(null)
+
+    // Advanced Configuration State
+    const [showAdvanced, setShowAdvanced] = useState(false)
+    const [configData, setConfigData] = useState({
+        epochs: '',
+        batch_size: '',
+        learning_rate: '',
+        n_estimators: '',
+        max_depth: '',
+        img_size: ''
+    })
+
+    const [imageProblemType, setImageProblemType] = useState('image_classification')
 
     // AI Prompt Analysis State
     const [aiPrompt, setAiPrompt] = useState('')
@@ -135,11 +149,20 @@ export default function Training() {
     const handleStartTraining = () => {
         if (!selectedDataset || !experimentName.trim()) return
 
+        // Filter out empty config values natively instead of sending nulls to backend
+        const cleanConfig = {}
+        Object.entries(configData).forEach(([key, val]) => {
+            if (val !== '') {
+                cleanConfig[key] = key === 'learning_rate' ? parseFloat(val) : parseInt(val, 10)
+            }
+        })
+
         startTrainingMutation.mutate({
             dataset_id: parseInt(selectedDataset),
             name: experimentName.trim(),
             target_column: isImageDataset ? null : (targetColumn || null),
-            goal_description: isImageDataset ? 'Image classification' : goalDescription
+            goal_description: isImageDataset ? (imageProblemType === 'object_detection' ? 'Object Detection' : 'Image classification') : goalDescription,
+            config: { ...cleanConfig, problem_type: isImageDataset ? imageProblemType : undefined }
         })
     }
 
@@ -234,8 +257,27 @@ export default function Training() {
                         </select>
                     </div>
 
+                    {/* ── Image Dataset Config ── */}
+                    {isImageDataset && (
+                        <div className="form-group">
+                            <label className="label">
+                                <Target size={14} />
+                                Vision Task <span className="required">*</span>
+                            </label>
+                            <select
+                                className="input"
+                                value={imageProblemType}
+                                onChange={(e) => setImageProblemType(e.target.value)}
+                                disabled={isTraining}
+                            >
+                                <option value="image_classification">Image Classification (Predict Categories)</option>
+                                <option value="object_detection">Object Detection (Find Bounding Boxes via YOLOv8)</option>
+                            </select>
+                        </div>
+                    )}
+
                     {/* ── Image Dataset: Class Gallery ── */}
-                    {isImageDataset && imageClasses && (
+                    {isImageDataset && imageClasses && imageProblemType === 'image_classification' && (
                         <div className="image-classes-panel">
                             <label className="label">
                                 <ImageIcon size={14} />
@@ -366,6 +408,75 @@ export default function Training() {
                                 <p className="form-hint">Select only for supervised learning (classification / regression)</p>
                             </div>
                         </>
+                    )}
+
+                    {/* 5. Advanced Settings (Visible for both types) */}
+                    {selectedDataset && (
+                        <div className="advanced-settings-section" style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                disabled={isTraining}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <Settings size={14} />
+                                    Advanced Configuration
+                                </span>
+                                <ChevronDown size={14} style={{ transform: showAdvanced ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                            </button>
+
+                            {showAdvanced && (
+                                <div className="advanced-settings-content" style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px' }}>
+                                    {isImageDataset ? (
+                                        <>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="label">Epochs</label>
+                                                <input type="number" min="1" max="1000" className="input" value={configData.epochs} onChange={(e) => setConfigData({ ...configData, epochs: e.target.value })} placeholder={imageProblemType === 'object_detection' ? "Default: 30" : "Default: 15"} disabled={isTraining} />
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="label">Batch Size</label>
+                                                <input type="number" min="1" max="1024" className="input" value={configData.batch_size} onChange={(e) => setConfigData({ ...configData, batch_size: e.target.value })} placeholder={imageProblemType === 'object_detection' ? "Default: 16" : "Default: 32"} disabled={isTraining} />
+                                            </div>
+                                            {imageProblemType === 'object_detection' && (
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label className="label">Image Size</label>
+                                                    <select className="input" value={configData.img_size} onChange={(e) => setConfigData({ ...configData, img_size: e.target.value })} disabled={isTraining}>
+                                                        <option value="">Default (640)</option>
+                                                        <option value="320">320 (Faster Training)</option>
+                                                        <option value="640">640 (Balanced)</option>
+                                                        <option value="1280">1280 (Higher Accuracy)</option>
+                                                    </select>
+                                                </div>
+                                            )}
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="label">Learning Rate</label>
+                                                <input type="number" step="0.001" min="0.0001" max="1.0" className="input" value={configData.learning_rate} onChange={(e) => setConfigData({ ...configData, learning_rate: e.target.value })} placeholder={imageProblemType === 'object_detection' ? "Default: 0.01" : "Default: 0.001"} disabled={isTraining} />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="label">Epochs (For Neural Networks)</label>
+                                                <input type="number" min="1" max="1000" className="input" value={configData.epochs} onChange={(e) => setConfigData({ ...configData, epochs: e.target.value })} placeholder="Default: 50" disabled={isTraining} />
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="label">Number of Estimators (Trees)</label>
+                                                <input type="number" min="1" max="5000" className="input" value={configData.n_estimators} onChange={(e) => setConfigData({ ...configData, n_estimators: e.target.value })} placeholder="Default: 100" disabled={isTraining} />
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="label">Max Depth</label>
+                                                <input type="number" min="1" max="100" className="input" value={configData.max_depth} onChange={(e) => setConfigData({ ...configData, max_depth: e.target.value })} placeholder="Default: Auto (-1)" disabled={isTraining} />
+                                            </div>
+                                        </>
+                                    )}
+                                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, marginTop: '0.5rem' }}>
+                                        Leave blank to use optimal industry defaults for our selected algorithms.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
 

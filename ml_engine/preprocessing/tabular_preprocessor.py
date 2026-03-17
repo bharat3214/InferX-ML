@@ -6,10 +6,11 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, RobustScaler, LabelEncoder, OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import VarianceThreshold
 import joblib
 
 
@@ -24,6 +25,9 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         numeric_strategy: str = 'median',
         categorical_strategy: str = 'most_frequent',
         scale_numeric: bool = True,
+        use_robust_scaler: bool = True,  # Industrial best practice
+        add_indicator: bool = True,      # Track missing values
+        drop_high_missing: float = 0.6,  # Drop columns with >60% missing
         encode_categorical: str = 'onehot',  # 'onehot' or 'label'
         max_onehot_cardinality: int = 10
     ):
@@ -34,12 +38,18 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
             numeric_strategy: Imputation strategy for numeric columns
             categorical_strategy: Imputation strategy for categorical columns
             scale_numeric: Whether to standardize numeric columns
+            use_robust_scaler: If True, use RobustScaler instead of StandardScaler
+            add_indicator: If True, add boolean columns for missing values
+            drop_high_missing: Threshold to drop columns (e.g., 0.6 means drop if >60% missing)
             encode_categorical: Encoding method for categorical columns
             max_onehot_cardinality: Max unique values for one-hot encoding
         """
         self.numeric_strategy = numeric_strategy
         self.categorical_strategy = categorical_strategy
         self.scale_numeric = scale_numeric
+        self.use_robust_scaler = use_robust_scaler
+        self.add_indicator = add_indicator
+        self.drop_high_missing = drop_high_missing
         self.encode_categorical = encode_categorical
         self.max_onehot_cardinality = max_onehot_cardinality
         
@@ -62,6 +72,12 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         Returns:
             self
         """
+        # Drop columns with too many missing values
+        if self.drop_high_missing is not None and self.drop_high_missing < 1.0:
+            missing_ratios = X.isna().mean()
+            keep_cols = missing_ratios[missing_ratios <= self.drop_high_missing].index
+            X = X[keep_cols]
+        
         # Identify column types
         self._identify_columns(X)
         
@@ -71,24 +87,29 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         # Numeric transformer
         if self.numeric_columns_:
             numeric_steps = [
-                ('imputer', SimpleImputer(strategy=self.numeric_strategy))
+                ('imputer', SimpleImputer(strategy=self.numeric_strategy, add_indicator=self.add_indicator))
             ]
             if self.scale_numeric:
-                numeric_steps.append(('scaler', StandardScaler()))
+                scaler = RobustScaler() if self.use_robust_scaler else StandardScaler()
+                numeric_steps.append(('scaler', scaler))
+            
+            # Add variance threshold to remove constant features
+            numeric_steps.append(('variance', VarianceThreshold(threshold=0.0)))
             
             numeric_pipeline = Pipeline(numeric_steps)
             transformers.append(('numeric', numeric_pipeline, self.numeric_columns_))
         
         # Categorical transformer
         if self.categorical_columns_:
+            # Note: add_indicator is typically more useful for numeric, but can be added to categorical too
             if self.encode_categorical == 'onehot':
                 categorical_pipeline = Pipeline([
-                    ('imputer', SimpleImputer(strategy=self.categorical_strategy, fill_value='missing')),
+                    ('imputer', SimpleImputer(strategy=self.categorical_strategy, fill_value='missing', add_indicator=self.add_indicator)),
                     ('encoder', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
                 ])
             else:
                 categorical_pipeline = Pipeline([
-                    ('imputer', SimpleImputer(strategy=self.categorical_strategy, fill_value='missing')),
+                    ('imputer', SimpleImputer(strategy=self.categorical_strategy, fill_value='missing', add_indicator=self.add_indicator)),
                     ('encoder', OrdinalEncoderWithUnknown())
                 ])
             
@@ -163,21 +184,25 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
                 self.categorical_columns_.append(col)
     
     def _get_feature_names(self):
-        """Extract feature names after transformation"""
+        # Extract feature names after transformation
+        if self.column_transformer_ is None:
+            return
+            
         try:
             self.feature_names_out_ = list(self.column_transformer_.get_feature_names_out())
-        except:
+        except Exception:
             # Fallback for older sklearn versions
             feature_names = []
             
-            for name, transformer, columns in self.column_transformer_.transformers_:
-                if name == 'remainder':
-                    continue
-                    
-                if hasattr(transformer, 'get_feature_names_out'):
-                    feature_names.extend(transformer.get_feature_names_out(columns))
-                else:
-                    feature_names.extend(columns)
+            if hasattr(self.column_transformer_, 'transformers_'):
+                for name, transformer, columns in getattr(self.column_transformer_, 'transformers_', []):
+                    if name == 'remainder':
+                        continue
+                        
+                    if hasattr(transformer, 'get_feature_names_out'):
+                        feature_names.extend(transformer.get_feature_names_out(columns))
+                    else:
+                        feature_names.extend(columns)
             
             self.feature_names_out_ = feature_names
     
@@ -234,13 +259,13 @@ class OrdinalEncoderWithUnknown(BaseEstimator, TransformerMixin):
     
     def fit(self, X, y=None):
         if isinstance(X, pd.DataFrame):
-            for col in X.columns:
+            for col in getattr(X, 'columns', []):
                 le = LabelEncoder()
                 le.fit(X[col].astype(str))
                 self.encoders_[col] = le
         else:
             X = np.asarray(X)
-            for i in range(X.shape[1]):
+            for i in range(getattr(X, 'shape', (0,0))[1]):
                 le = LabelEncoder()
                 le.fit(X[:, i].astype(str))
                 self.encoders_[i] = le
