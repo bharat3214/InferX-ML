@@ -1,7 +1,7 @@
 """
 Object Detection Module (YOLOv8)
 Supports: YOLOv8 (ultralytics) architecture for bounding box detection.
-GPU: Automatically uses CUDA if available.
+Device: Controlled via DEVICE_TYPE environment variable (default: cpu).
 """
 import os
 import glob
@@ -16,6 +16,9 @@ try:
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
+
+# Read device from environment variable
+DEVICE_TYPE = os.environ.get("DEVICE_TYPE", "cpu").lower()
 
 
 class ObjectDetector:
@@ -60,8 +63,8 @@ class ObjectDetector:
         self.metrics_ = {}
         self.best_weights_path_ = None
         
-        # Determine device
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        # Determine device from env
+        self.device = DEVICE_TYPE
         print(f"[ObjectDetector] Initialized YOLOv8{model_size} on device: {self.device}")
 
     def fit_from_directory(

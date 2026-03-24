@@ -1,7 +1,7 @@
 """
 LSTM Time-Series Forecasting
 Deep learning approach using LSTM networks
-GPU: Automatically uses GPU if available, falls back to CPU.
+Device: Controlled via DEVICE_TYPE environment variable (default: cpu).
 """
 import numpy as np
 import pandas as pd
@@ -18,14 +18,6 @@ try:
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
-
-# ── GPU auto-configuration ──────────────────────────────────────
-try:
-    from ml_engine.utils.gpu_utils import configure_tensorflow_gpu, log_gpu_info
-    if TENSORFLOW_AVAILABLE:
-        configure_tensorflow_gpu()
-except ImportError:
-    pass  # utils not available (e.g. standalone use)
 
 
 class LSTMForecaster:
@@ -94,11 +86,6 @@ class LSTMForecaster:
         Returns:
             self
         """
-        # Log GPU status at training start
-        try:
-            log_gpu_info()
-        except Exception:
-            pass
 
         # Ensure 2D
         if len(data.shape) == 1:

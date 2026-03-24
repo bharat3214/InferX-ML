@@ -50,7 +50,7 @@ services:
       timeout: 20s
       retries: 3
 
-  # Flask Backend (with GPU support if available)
+  # Flask Backend (CPU-only)
   backend:
     build:
       context: .
@@ -65,7 +65,7 @@ services:
       - MINIO_SECRET_KEY=minioadmin
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - NVIDIA_VISIBLE_DEVICES=all
+      - DEVICE_TYPE=${DEVICE_TYPE:-cpu}
     ports:
       - "5000:5000"
     volumes:
@@ -79,17 +79,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    # GPU support — requires NVIDIA Container Toolkit
-    # If no GPU is available, Docker ignores this block gracefully
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
 
-  # Celery Worker (with GPU support if available)
+  # Celery Worker (CPU-only)
   celery:
     build:
       context: .
@@ -104,21 +95,13 @@ services:
       - MINIO_SECRET_KEY=minioadmin
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - NVIDIA_VISIBLE_DEVICES=all
+      - DEVICE_TYPE=${DEVICE_TYPE:-cpu}
     volumes:
       - ./backend:/app
       - ./ml_engine:/app/ml_engine
     depends_on:
       - backend
       - redis
-    # GPU support — requires NVIDIA Container Toolkit
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
 
   # React Frontend
   frontend:

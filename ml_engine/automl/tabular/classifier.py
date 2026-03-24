@@ -1,7 +1,7 @@
 """
 Tabular Classification Module
 Supports: Logistic Regression, Random Forest, XGBoost, Gradient Boosting, SVM, KNN, Decision Tree, AdaBoost, Extra Trees, LightGBM
-GPU: Automatically uses GPU for XGBoost/LightGBM if CUDA is available.
+Device: Controlled via DEVICE_TYPE environment variable (default: cpu).
 """
 import numpy as np
 import pandas as pd
@@ -72,30 +72,16 @@ class TabularClassifier:
     }
     
     def __init__(self):
-        # ── GPU auto-detection for tree-based models ─────────────
-        _xgb_gpu = {}
-        _lgbm_gpu = {}
-        try:
-            from ml_engine.utils.gpu_utils import get_xgboost_gpu_params, get_lightgbm_gpu_params
-            _xgb_gpu = get_xgboost_gpu_params()
-            _lgbm_gpu = get_lightgbm_gpu_params()
-        except ImportError:
-            pass
-
         if XGBOOST_AVAILABLE:
-            xgb_params = {'n_estimators': 100, 'random_state': 42, 'use_label_encoder': False, 'eval_metric': 'logloss'}
-            xgb_params.update(_xgb_gpu)  # adds GPU params if available
             self.MODELS['xgboost'] = {
                 'class': XGBClassifier,
-                'params': xgb_params
+                'params': {'n_estimators': 100, 'random_state': 42, 'use_label_encoder': False, 'eval_metric': 'logloss'}
             }
         
         if LIGHTGBM_AVAILABLE:
-            lgbm_params = {'n_estimators': 100, 'random_state': 42, 'verbose': -1}
-            lgbm_params.update(_lgbm_gpu)  # adds GPU params if available
             self.MODELS['lightgbm'] = {
                 'class': LGBMClassifier,
-                'params': lgbm_params
+                'params': {'n_estimators': 100, 'random_state': 42, 'verbose': -1}
             }
         
         self.trained_models = {}

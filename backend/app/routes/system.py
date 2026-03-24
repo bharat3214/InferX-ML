@@ -1,6 +1,7 @@
 """
-System Routes — GPU info and system diagnostics
+System Routes — System info and diagnostics
 """
+import os
 from flask import Blueprint, jsonify
 
 system_bp = Blueprint('system', __name__)
@@ -9,21 +10,18 @@ system_bp = Blueprint('system', __name__)
 @system_bp.route('/gpu-info', methods=['GET'])
 def gpu_info():
     """
-    Return GPU availability and device details.
-    If a GPU is detected it will be used automatically during training.
+    Return device availability and system details.
+    Reports CPU-only since GPU dependencies have been removed.
+    Endpoint name kept for backward compatibility.
     """
-    try:
-        from ml_engine.utils.gpu_utils import detect_gpus
-        info = detect_gpus()
-    except ImportError:
-        info = {
-            "gpu_available": False,
-            "gpu_count": 0,
-            "gpu_devices": [],
-            "cuda_available": False,
-            "tensorflow_gpu": False,
-            "pytorch_gpu": False,
-            "error": "ml_engine.utils not available",
-        }
+    device_type = os.environ.get("DEVICE_TYPE", "cpu").lower()
 
-    return jsonify(info), 200
+    return jsonify({
+        "gpu_available": False,
+        "gpu_count": 0,
+        "gpu_devices": [],
+        "cuda_available": False,
+        "tensorflow_gpu": False,
+        "pytorch_gpu": False,
+        "device_type": device_type,
+    }), 200
