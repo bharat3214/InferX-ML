@@ -143,20 +143,43 @@ const TrustPanel = ({ trust }) => {
 };
 
 // Final Summary Component
-const FinalSummary = ({ summary }) => {
+const FinalSummary = ({ summary, onEnsemble, isEnsembling }) => {
     if (!summary) return null;
+    
+    // Check if ensemble already exists in model list
+    const hasEnsemble = summary.best_model.includes("Ensemble");
     
     return (
         <div className="final-summary">
             <div className="summary-header">
                 <span className="summary-icon">🎉</span>
-                <h3>Your Model is Ready!</h3>
+                <h3>Your {hasEnsemble ? 'Super-Model' : 'Model'} is Ready!</h3>
             </div>
             
             <div className="summary-section">
                 <h4>🏆 Best Performer: {summary.best_model}</h4>
                 <p className="score-display">Accuracy: {summary.score_display}</p>
             </div>
+
+            {!hasEnsemble && (
+                <div className="ensemble-upsell">
+                    <div className="upsell-text">
+                        <Brain size={16} className="upsell-icon" />
+                        <span>Want even higher accuracy? Combine the strengths of your Top 3 models.</span>
+                    </div>
+                    <button 
+                        className="ensemble-btn" 
+                        onClick={onEnsemble} 
+                        disabled={isEnsembling}
+                    >
+                        {isEnsembling ? (
+                            <><Loader size={14} className="spin" /> Creating Super-Model...</>
+                        ) : (
+                            "Combine Top 3 (Voting Ensemble)"
+                        )}
+                    </button>
+                </div>
+            )}
             
             <div className="summary-section">
                 <h4>Why This Model?</h4>
@@ -190,7 +213,7 @@ const FinalSummary = ({ summary }) => {
 };
 
 // Main Learning Timeline Component
-const LearningTimeline = ({ explanationData, isTraining }) => {
+const LearningTimeline = ({ explanationData, isTraining, onEnsemble, isEnsembling }) => {
     const [expandedPhases, setExpandedPhases] = useState({});
     const [expandedModels, setExpandedModels] = useState({});
     const [showModels, setShowModels] = useState(true);
@@ -275,7 +298,13 @@ const LearningTimeline = ({ explanationData, isTraining }) => {
             
             <TrustPanel trust={trust} />
             
-            {summary && <FinalSummary summary={summary} />}
+            {summary && (
+                <FinalSummary 
+                    summary={summary} 
+                    onEnsemble={onEnsemble} 
+                    isEnsembling={isEnsembling} 
+                />
+            )}
         </div>
     );
 };

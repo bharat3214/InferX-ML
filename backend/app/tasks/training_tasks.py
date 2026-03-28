@@ -122,6 +122,8 @@ def run_training_pipeline(
     from ml_engine.automl.tabular.clusterer import TabularClusterer
     from ml_engine.preprocessing.tabular_preprocessor import TabularPreprocessor
     from ml_engine.packaging.model_packager import ModelPackager, create_feature_schema
+    from ml_engine.utils.visualizer import ModelVisualizer
+    from sklearn.model_selection import train_test_split
     
     target_column = experiment.target_column
     problem_type = experiment.problem_type
@@ -152,6 +154,17 @@ def run_training_pipeline(
         task.update_state(state='PROGRESS', meta={'step': 'training', 'progress': 30})
     
     config = experiment.config or {}
+    auto_balance = config.get('auto_balance', False)
+    
+    if auto_balance and target_column and 'classification' in problem_type:
+        try:
+            from imblearn.over_sampling import SMOTE
+            smote = SMOTE(random_state=42)
+            X_processed, y_processed = smote.fit_resample(X_processed, y_processed)
+            print(f"Applied SMOTE. New shape: {X_processed.shape}", flush=True)
+        except ImportError:
+            print("imbalanced-learn not installed. Skipping SMOTE auto-balance.", flush=True)
+            pass
     
     # Select and train model based on problem type
     result = {}
@@ -187,9 +200,28 @@ def run_training_pipeline(
     if task:
         task.update_state(state='PROGRESS', meta={'step': 'packaging', 'progress': 80})
     
+    # Recreate the exact test split to generate accurate evaluation graphs
+    X_test = None
+    y_test = None
+    try:
+        if 'classification' in problem_type:
+            _, X_test, _, y_test = train_test_split(X_processed, y_processed, test_size=0.2, random_state=42, stratify=y_processed)
+        elif 'regression' in problem_type:
+            _, X_test, _, y_test = train_test_split(X_processed, y_processed, test_size=0.2, random_state=42)
+    except Exception as e:
+        print(f"Warning: Could not recreate test splits for graphs: {e}")
+    
     # Package model
     with tempfile.TemporaryDirectory() as tmp_dir:
         packager = ModelPackager(tmp_dir)
+        
+        # Generate Graphs
+        graphs_dir = os.path.join(tmp_dir, 'graphs')
+        if X_test is not None and y_test is not None:
+            if 'classification' in problem_type:
+                ModelVisualizer.generate_classification_graphs(trainer.best_model, X_test, y_test, graphs_dir)
+            elif 'regression' in problem_type:
+                ModelVisualizer.generate_regression_graphs(trainer.best_model, X_test, y_test, graphs_dir)
         
         feature_schema = create_feature_schema(df, target_column or '')
         
@@ -207,7 +239,8 @@ def run_training_pipeline(
             model=trainer.best_model,
             preprocessor=preprocessor,
             feature_schema=feature_schema,
-            metadata=metadata
+            metadata=metadata,
+            graphs_dir=graphs_dir if os.path.exists(graphs_dir) else None
         )
         
         # Upload to MinIO

@@ -156,7 +156,12 @@ When a model is trained, the platform creates a **self-contained package**:
 ├── feature_schema.json          # Column types, categories, ranges
 ├── ui_schema.json               # Auto-generated form schema
 ├── metadata.json                # Metrics, version, timestamp
-└── requirements.txt             # Python dependencies
+├── requirements.txt             # Python dependencies
+└── 📊 graphs/                   # Evaluation visualizations
+    ├── confusion_matrix.png     # Classification error matrix
+    ├── roc_curve.png            # Model AUC performance
+    ├── residual_plot.png        # Regression error spread
+    └── feature_importance.png   # SHAP/Tree importance charts
 ```
 
 ### JSON-based UI Schema Example
@@ -311,11 +316,15 @@ InferX-ML/
 - [ ] Problem Detector (classify task type: classification/regression/clustering/timeseries)
 - [ ] Feature Engineer (auto preprocessing, encoding, scaling)
 - [ ] Dataset management UI
+- [ ] **Auto-Balancing (SMOTE)**: Detect extreme imbalance and prompt users to generate synthetic minority records.
 
 ### Phase 3: Tabular AutoML (Week 5-6)
 - [ ] Model Selector (rule-based algorithm selection)
 - [ ] Trainer (parallel training with Celery)
 - [ ] Evaluator (metrics, cross-validation)
+- [ ] Visualizer (generate & save confusion matrix, ROC curve, residual plots)
+- [x] **Model Leaderboard**: Real-time evaluation of 8-10 models during training.
+- [x] **Ensemble Super-Model**: Pro feature to combine Top 3 models into a Voting Classifier/Regressor.
 - [ ] Best model selection logic
 
 ### Phase 4: Time-Series & Image (Week 7-8)
@@ -476,7 +485,11 @@ InferX-ML/
   - Human approval workflow (pending → approved → fulfilled)
   - Future: Supplier API integration for automated ordering
 
-- **Model Explainability**: Marked as **VERY IMPORTANT** - every prediction should have clear explanations.
+* ⚖️ **Automated Data Auto-Balancing** (Detects skewed classes and applies SMOTE synthetic generation)
+* 🏆 **Dynamic Model Leaderboard** (Watch models compete in real-time while training)
+* 🔮 **One-Click Ensemble** (Combine Top 3 performers into a robust Super-Model)
+* ⚙️ **Automated data profiling, preprocessing, and model training**
+* 📈 **Built-in model evaluation and explainability**: Marked as **VERY IMPORTANT** - every prediction should have clear explanations.
 
 ---
 

@@ -52,6 +52,7 @@ class Dataset(db.Model):
             'num_columns': self.num_columns,
             'column_info': self.column_info,
             'profile_status': self.profile_status,
+            'profile_data': self.profile_data,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
         }

@@ -456,6 +456,8 @@ function getCategoryById(id) {
     return CATEGORIES.find(c => c.id === id) || CATEGORIES[0]
 }
 
+
+
 // ═══════════════════════════════════════════════════════
 // Component
 // ═══════════════════════════════════════════════════════
@@ -873,13 +875,13 @@ export default function Datasets() {
                 <div className="modal-overlay" onClick={() => setSelectedDataset(null)}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h2>{selectedDataset.name}</h2>
+                            <h2>Dataset Details</h2>
                             <button className="modal-close" onClick={() => setSelectedDataset(null)}>
                                 <X size={20} />
                             </button>
                         </div>
                         <div className="modal-content">
-                            <div className="dataset-details">
+                                <div className="dataset-details">
                                 <div className="detail-row">
                                     <span className="detail-label">Type</span>
                                     <span>{selectedDataset.file_type?.toUpperCase()}</span>

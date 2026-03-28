@@ -13,19 +13,33 @@ class AIInsightGenerator:
     """Generates dynamic, dataset-specific insights using Gemini AI"""
     
     def __init__(self):
-        self.api_key = os.getenv('GEMINI_API_KEY')
-        self.model_name = 'gemini-1.5-flash'  # Fast and cost-efficient
+        self.gemini_key = os.getenv('GEMINI_API_KEY')
+        self.groq_key = os.getenv('GROQ_API_KEY')
+        self.gemini_model = 'gemini-1.5-flash'
+        self.groq_model = 'llama-3.1-8b-instant' # Updated Llama 3.1 on Groq
     
+    def _call_ai(self, prompt: str, max_tokens: int = 200) -> str:
+        """Central AI call with Gemini primary and Groq fallback"""
+        # 1. Try Gemini
+        response = self._call_gemini(prompt, max_tokens)
+        if response:
+            return response
+            
+        # 2. Fallback to Groq if key exists
+        if self.groq_key:
+            return self._call_groq(prompt, max_tokens)
+            
+        return None
+
     def _call_gemini(self, prompt: str, max_tokens: int = 200) -> str:
-        """Call Gemini API with error handling"""
-        if not self.api_key:
-            print("⚠️ GEMINI_API_KEY not set, using fallback insights", flush=True)
+        """Call Gemini API"""
+        if not self.gemini_key:
             return None
-        
+            
         try:
             import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel(self.model_name)
+            genai.configure(api_key=self.gemini_key)
+            model = genai.GenerativeModel(self.gemini_model)
             
             response = model.generate_content(
                 prompt,
@@ -34,10 +48,35 @@ class AIInsightGenerator:
                     temperature=0.7,
                 )
             )
-            
             return response.text.strip()
         except Exception as e:
             print(f"⚠️ Gemini API error: {e}", flush=True)
+            return None
+
+    def _call_groq(self, prompt: str, max_tokens: int = 200) -> str:
+        """Call Groq API as a fallback"""
+        if not self.groq_key:
+            return None
+            
+        try:
+            from groq import Groq
+            client = Groq(api_key=self.groq_key)
+            
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                model=self.groq_model,
+                max_tokens=max_tokens,
+                temperature=0.7,
+            )
+            
+            return chat_completion.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"⚠️ Groq API error: {e}", flush=True)
             return None
     
     def analyze_dataset(self, df: pd.DataFrame, target_column: str, goal_description: str = "") -> List[str]:
@@ -81,7 +120,7 @@ Example good insights:
 "Rainfall shows clear seasonal pattern with peaks in monsoon months"
 """
             
-            response = self._call_gemini(prompt, max_tokens=250)
+            response = self._call_ai(prompt, max_tokens=250)
             
             if response:
                 # Parse insights (one per line)
@@ -171,7 +210,7 @@ Use actual feature names. Be specific.
 Example: "Model found temperature (importance 0.42) as the most decisive factor"
 """
             
-            response = self._call_gemini(prompt, max_tokens=50)
+            response = self._call_ai(prompt, max_tokens=50)
             
             if response:
                 # Clean up response
@@ -210,7 +249,7 @@ Generate ONE SHORT insight (max 15 words) explaining why this model likely perfo
 Example: "Random Forest excelled by capturing complex non-linear relationships in the data"
 """
             
-            response = self._call_gemini(prompt, max_tokens=50)
+            response = self._call_ai(prompt, max_tokens=50)
             
             if response:
                 insight = response.split('\n')[0].strip()

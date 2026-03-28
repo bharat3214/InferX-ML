@@ -17,7 +17,8 @@ The platform is built entirely on **open-source technologies**, including **Stre
 * 🚀 **No-code, user-friendly ML workflow**
 * 📊 **Supports tabular (CSV/Excel), time-series, and image datasets**
 * ⚙️ **AI-powered goal analysis** (Groq/Gemini integration)\r
-* ⚙️ **Automated data profiling, preprocessing, and model training**
+* ⚖️ **Automated Data Auto-Balancing** (Detects skewed classes and applies SMOTE synthetic generation)\r
+* ⚙️ **Automated data profiling, preprocessing, and model training**\r
 * 📈 **Built-in model evaluation and explainability**
 * 🧩 **Open-source, lightweight, and scalable-by-design**
 
@@ -122,14 +123,27 @@ cp .env.example .env
 
 ## 🐳 Running with Docker (Recommended)
 
-### Start All Services
+### Start Services
 
+Choose the command based on your hardware:
+
+**Option A: CPU Only (Standard)**
 ```bash
-# Start all infrastructure + services
 docker-compose up --build
+```
 
-# Or start in background
-docker-compose up -d --build
+**Option B: GPU Enabled (Requires NVIDIA GPU & Container Toolkit)**
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+```
+
+#### Advanced: Manual Builds
+You can also build individual images with custom arguments:
+```bash
+# Build backend for GPU manually
+docker build -t inferx-backend-gpu \
+  --build-arg BASE_IMAGE=nvidia/cuda:11.8.0-runtime-ubuntu22.04 \
+  -f docker/Dockerfile.backend .
 ```
 
 **Access Points:**

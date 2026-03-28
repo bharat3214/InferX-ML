@@ -235,6 +235,10 @@ def upload_dataset():
             }
             dataset.profile_status = 'completed'
             db.session.commit()
+            
+            # Trigger advanced profiling in background for Visual Insights
+            from app.tasks.training_tasks import profile_dataset_task
+            profile_dataset_task.delay(dataset.id)
         except Exception as e:
             print(f"Profiling failed: {e}")
             dataset.profile_status = 'failed'
@@ -464,6 +468,10 @@ def use_sample_dataset():
             }
             dataset.profile_status = 'completed'
             db.session.commit()
+            
+            # Trigger advanced profiling in background for Visual Insights
+            from app.tasks.training_tasks import profile_dataset_task
+            profile_dataset_task.delay(dataset.id)
         except Exception as e:
             print(f"Profiling failed: {e}")
             dataset.profile_status = 'failed'

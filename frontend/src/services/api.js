@@ -67,7 +67,9 @@ export const trainingApi = {
     getLogs: (jobId) => api.get(`/training/${jobId}/logs`),
     getThinkingLogs: (jobId) => api.get(`/training/${jobId}/thinking`),
     cancel: (jobId) => api.post(`/training/${jobId}/cancel`),
-    analyzePrompt: (datasetId, prompt) => api.post('/training/analyze-prompt', { dataset_id: datasetId, prompt })
+    ensembleTop3: (jobId) => api.post(`/training/${jobId}/ensemble`),
+    analyzePrompt: (datasetId, prompt) => api.post('/training/analyze-prompt', { dataset_id: datasetId, prompt }),
+    ensemble: (experimentId) => api.post(`/training/${experimentId}/ensemble`)
 }
 
 export const modelsApi = {
@@ -75,7 +77,8 @@ export const modelsApi = {
     get: (id) => api.get(`/models/${id}`),
     delete: (id) => api.delete(`/models/${id}`),
     download: (id) => api.get(`/models/${id}/download`, { responseType: 'blob' }),
-    getSchema: (id) => api.get(`/models/${id}/schema`)
+    getSchema: (id) => api.get(`/models/${id}/schema`),
+    getGraphs: (id) => api.get(`/models/${id}/graphs`)
 }
 
 export const predictionsApi = {

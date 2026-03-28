@@ -26,7 +26,8 @@ class ModelPackager:
         preprocessor: Any,
         feature_schema: Dict[str, Any],
         metadata: Dict[str, Any],
-        model_format: str = 'pkl'
+        model_format: str = 'pkl',
+        graphs_dir: Optional[str] = None
     ) -> str:
         """
         Create a complete model package
@@ -95,7 +96,11 @@ class ModelPackager:
             f.write(streamlit_code)
         
         # Generate requirements.txt (includes streamlit)
-        self._generate_requirements(package_dir, model_format)
+        # Copy graphs folder if provided
+        if graphs_dir and os.path.exists(graphs_dir):
+            target_graphs_dir = os.path.join(package_dir, 'graphs')
+            if not os.path.exists(target_graphs_dir):
+                shutil.copytree(graphs_dir, target_graphs_dir)
         
         return package_dir
     

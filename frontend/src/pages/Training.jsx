@@ -19,7 +19,7 @@ import {
     ImageIcon,
     Settings
 } from 'lucide-react'
-import { datasetsApi, trainingApi } from '../services/api'
+import { datasetsApi, trainingApi, modelsApi } from '../services/api'
 import LearningTimeline from '../components/LearningTimeline'
 import './Training.css'
 
@@ -53,6 +53,11 @@ export default function Training() {
     const [aiAnalysis, setAiAnalysis] = useState(null)
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [analysisError, setAnalysisError] = useState(null)
+
+    // Imbalance Detection State
+    const [imbalanceDetected, setImbalanceDetected] = useState(false)
+    const [autoBalance, setAutoBalance] = useState(false)
+    const [isEnsembling, setIsEnsembling] = useState(false)
 
     const { data: datasetsData } = useQuery({
         queryKey: ['datasets'],
@@ -107,6 +112,16 @@ export default function Training() {
     // Get explanation data from status response
     const explanationData = statusData?.data?.experiment?.explanation_data || null
 
+    // Fetch graphs if training completed
+    const { data: graphsData } = useQuery({
+        queryKey: ['model-graphs', currentJob?.id],
+        queryFn: () => modelsApi.getGraphs(currentJob.id),
+        enabled: !!currentJob && statusData?.data?.experiment?.status === 'completed',
+        retry: 1
+    })
+    const graphs = graphsData?.data?.graphs || {}
+    const hasGraphs = Object.keys(graphs).length > 0
+
     const startTrainingMutation = useMutation({
         mutationFn: (data) => trainingApi.start(data),
         onSuccess: (response) => {
@@ -114,6 +129,23 @@ export default function Training() {
             setIsTraining(true)
         }
     })
+
+    const ensembleMutation = useMutation({
+        mutationFn: (experimentId) => trainingApi.ensemble(experimentId),
+        onSuccess: () => {
+            setIsTraining(true)
+            setIsEnsembling(false)
+        },
+        onError: () => {
+            setIsEnsembling(false)
+        }
+    })
+
+    const handleCombineTop3 = () => {
+        if (!currentJob?.id) return
+        setIsEnsembling(true)
+        ensembleMutation.mutate(currentJob.id)
+    }
 
     // Check for completion
     if (isTraining && statusData?.data?.experiment?.status === 'completed') {
@@ -146,6 +178,36 @@ export default function Training() {
         }
     }
 
+    // Effect to check imbalance when target column changes
+    useEffect(() => {
+        if (!targetColumn || !profileData?.data?.column_info) {
+            setImbalanceDetected(false)
+            setAutoBalance(false)
+            return
+        }
+        const colInfo = profileData.data.column_info[targetColumn]
+        if (colInfo && colInfo?.top_values) {
+            const counts = Object.values(colInfo.top_values).map(Number)
+            if (counts.length >= 2) {
+                const max = Math.max(...counts)
+                const min = Math.min(...counts)
+                // Extreme imbalance (minority class is less than 20% of majority)
+                if (max > 0 && min / max <= 0.2) {
+                    setImbalanceDetected(true)
+                } else {
+                    setImbalanceDetected(false)
+                    setAutoBalance(false)
+                }
+            } else {
+                setImbalanceDetected(false)
+                setAutoBalance(false)
+            }
+        } else {
+            setImbalanceDetected(false)
+            setAutoBalance(false)
+        }
+    }, [targetColumn, profileData])
+
     const handleStartTraining = () => {
         if (!selectedDataset || !experimentName.trim()) return
 
@@ -162,7 +224,7 @@ export default function Training() {
             name: experimentName.trim(),
             target_column: isImageDataset ? null : (targetColumn || null),
             goal_description: isImageDataset ? (imageProblemType === 'object_detection' ? 'Object Detection' : 'Image classification') : goalDescription,
-            config: { ...cleanConfig, problem_type: isImageDataset ? imageProblemType : undefined }
+            config: { ...cleanConfig, problem_type: isImageDataset ? imageProblemType : undefined, auto_balance: autoBalance }
         })
     }
 
@@ -171,6 +233,15 @@ export default function Training() {
     const combinedLogs = allLogs.map(job =>
         `--- ${job.model_name} ---\n${job.logs || ''}`
     ).join('\n')
+
+    // Extract trained jobs for Leaderboard
+    const trainedJobs = statusData?.data?.jobs || []
+    // Sort jobs by score descendant (accuracy or r2_score)
+    const sortedJobs = [...trainedJobs].sort((a, b) => {
+        const scoreA = a.metrics?.accuracy || a.metrics?.r2_score || 0
+        const scoreB = b.metrics?.accuracy || b.metrics?.r2_score || 0
+        return scoreB - scoreA
+    })
 
     // Auto-scroll to bottom of logs
     useEffect(() => {
@@ -407,6 +478,29 @@ export default function Training() {
                                 </select>
                                 <p className="form-hint">Select only for supervised learning (classification / regression)</p>
                             </div>
+
+                            {/* Imbalance Detection Alert */}
+                            {imbalanceDetected && !isImageDataset && targetColumn && (
+                                <div className="imbalance-alert" style={{ marginTop: '1rem', padding: '1rem', backgroundColor: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ef4444', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                                        <AlertCircle size={16} />
+                                        <span>Extreme Imbalance Detected</span>
+                                    </div>
+                                    <p style={{ fontSize: '0.9rem', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
+                                        Your data is imbalanced. Would you like InferX to generate synthetic 'Fraud' records to balance the training?
+                                    </p>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={autoBalance} 
+                                            onChange={(e) => setAutoBalance(e.target.checked)}
+                                            disabled={isTraining}
+                                            style={{ margin: 0 }}
+                                        />
+                                        <span style={{ color: 'var(--text-color)' }}>Yes, automatically balance with SMOTE</span>
+                                    </label>
+                                </div>
+                            )}
                         </>
                     )}
 
@@ -537,10 +631,76 @@ export default function Training() {
                                     </div>
                                 </div>
 
+                                {/* LIVE LEADERBOARD */}
+                                {sortedJobs.length > 0 && (
+                                    <div className="leaderboard-section">
+                                        <div className="panel-header" style={{ marginBottom: '1rem', marginTop: '1.5rem' }}>
+                                            <Target size={16} />
+                                            <span>Live Model Leaderboard</span>
+                                            {isTraining && <div className="live-dot" />}
+                                        </div>
+                                        <div className="leaderboard-grid">
+                                            {sortedJobs.map((job, index) => {
+                                                const score = job.metrics?.accuracy || job.metrics?.r2_score || 0
+                                                const scoreFmt = (score * 100).toFixed(2) + '%'
+                                                const isEnsemble = job.model_name.toLowerCase().includes('ensemble')
+                                                const isBest = index === 0 && job.status === 'completed' && score > 0
+                                                return (
+                                                    <div key={job.id} className={`leaderboard-card ${isBest ? 'top-model' : ''} ${isEnsemble ? 'ensemble-model' : ''} ${job.status}`}>
+                                                        <div className="lb-rank">#{index + 1}</div>
+                                                        <div className="lb-info">
+                                                            <div className="lb-name">
+                                                                {job.model_name}
+                                                                {isEnsemble && <Sparkles size={12} className="ensemble-icon" />}
+                                                            </div>
+                                                            <div className="lb-metrics">
+                                                                {job.status === 'completed' && score > 0 ? (
+                                                                    <span className="lb-score">Score: <strong>{scoreFmt}</strong></span>
+                                                                ) : job.status === 'failed' ? (
+                                                                    <span className="lb-failed">Failed</span>
+                                                                ) : job.status === 'training' ? (
+                                                                    <span className="lb-training-badge">Training...</span>
+                                                                ) : (
+                                                                    <span className="lb-pending">Waiting...</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        {isBest && <div className="lb-crown">👑</div>}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+
+                                        {/* ENSEMBLE BUTTON FOR TABULAR DATA */}
+                                        {!isImageDataset && experimentStatus === 'completed' && sortedJobs.filter(j => j.status === 'completed').length >= 3 && !sortedJobs.some(j => j.model_name.toLowerCase().includes('ensemble')) && (
+                                            <div className="ensemble-action-banner">
+                                                <div className="ensemble-text">
+                                                    <Brain size={16} />
+                                                    <span><strong>Pro Feature:</strong> Combine Top 3 models for ultra-high accuracy!</span>
+                                                </div>
+                                                <button 
+                                                    className="btn btn-primary ensemble-action-btn" 
+                                                    onClick={handleCombineTop3}
+                                                    disabled={isEnsembling}
+                                                >
+                                                    {isEnsembling ? (
+                                                        <>
+                                                            <div className="spinner" style={{ width: 14, height: 14, borderColor: 'white', borderTopColor: 'transparent' }}></div>
+                                                            Merging...
+                                                        </>
+                                                    ) : 'Combine Top 3'}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* Learning Timeline */}
                                 <LearningTimeline
                                     explanationData={explanationData}
                                     isTraining={isTraining}
+                                    onEnsemble={handleCombineTop3}
+                                    isEnsembling={isEnsembling}
                                 />
 
                                 {/* Training Success */}
@@ -563,6 +723,30 @@ export default function Training() {
                                             </div>
                                         )}
                                         <a href="/models" className="btn btn-sm btn-outline">View Models</a>
+                                    </div>
+                                )}
+
+                                {/* Training Graphs */}
+                                {experimentStatus === 'completed' && hasGraphs && (
+                                    <div className="training-graphs-section" style={{ marginTop: '1.5rem' }}>
+                                        <div className="panel-header" style={{ marginBottom: '1rem' }}>
+                                            <ImageIcon size={16} />
+                                            <span>Evaluation Graphs</span>
+                                        </div>
+                                        <div className="graphs-grid">
+                                            {Object.entries(graphs).map(([name, src]) => (
+                                                <div key={name} className="graph-item card">
+                                                    <div className="graph-header">
+                                                        <h5 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                                            {name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                        </h5>
+                                                    </div>
+                                                    <div className="graph-img-wrap">
+                                                        <img src={src} alt={name} loading="lazy" />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                             </div>

@@ -150,6 +150,53 @@ def get_model_schema(model_id):
     }), 200
 
 
+@models_bp.route('/<int:model_id>/graphs', methods=['GET'])
+@jwt_required()
+def get_model_graphs(model_id):
+    """Get model evaluation graphs as base64 images"""
+    from app.services.minio_service import get_minio_service
+    import zipfile
+    import base64
+    import io
+    
+    user_id = int(get_jwt_identity())
+    
+    experiment = Experiment.query.filter_by(id=model_id, user_id=user_id).first()
+    if not experiment:
+        return jsonify({'error': 'Model not found'}), 404
+        
+    results = experiment.results or {}
+    model_package_path = results.get('model_package_path')
+    
+    graphs = {}
+    
+    if model_package_path:
+        try:
+            minio_service = get_minio_service()
+            # Handle legacy paths
+            corrected_path = model_package_path[7:] if model_package_path.startswith('models/') else model_package_path
+            zip_content = minio_service.download_bytes('models', corrected_path)
+            
+            if zip_content:
+                zip_buffer = io.BytesIO(zip_content)
+                with zipfile.ZipFile(zip_buffer, 'r') as zip_ref:
+                    # Look for png files in graphs directory
+                    for file_info in zip_ref.infolist():
+                        if file_info.filename.startswith('graphs/') and file_info.filename.endswith('.png'):
+                            name = file_info.filename.split('/')[-1].replace('.png', '')
+                            with zip_ref.open(file_info) as f:
+                                img_bytes = f.read()
+                                b64 = base64.b64encode(img_bytes).decode('utf-8')
+                                graphs[name] = f"data:image/png;base64,{b64}"
+        except Exception as e:
+            print(f"Error loading graphs: {e}", flush=True)
+            
+    return jsonify({
+        'model_id': model_id,
+        'graphs': graphs
+    }), 200
+
+
 @models_bp.route('/<int:model_id>', methods=['DELETE'])
 @jwt_required()
 def delete_model(model_id):

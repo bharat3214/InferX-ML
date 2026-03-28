@@ -22,7 +22,8 @@ import {
     ArrowRight,
     Info,
     FlaskConical,
-    CheckCircle
+    CheckCircle,
+    ImageIcon
 } from 'lucide-react'
 import { modelsApi } from '../services/api'
 import './Models.css'
@@ -105,6 +106,15 @@ function AnalysisModal({ model, onClose, onDelete }) {
     const models = explanationData.models || []
     const trust = explanationData.trust || {}
     const insights = explanationData.insights || []
+
+    const { data: graphsData, isLoading: isLoadingGraphs } = useQuery({
+        queryKey: ['model-graphs', model.id],
+        queryFn: () => modelsApi.getGraphs(model.id),
+        enabled: !!model.id,
+        retry: 1
+    })
+    const graphs = graphsData?.data?.graphs || {}
+    const hasGraphs = Object.keys(graphs).length > 0
 
     // Build chart data from all_models
     const chartData = useMemo(() => {
@@ -332,6 +342,25 @@ function AnalysisModal({ model, onClose, onDelete }) {
                                     ))}
                                 </ul>
                             )}
+                        </div>
+                    )}
+
+                    {/* ── Evaluation Graphs ── */}
+                    {hasGraphs && (
+                        <div className="analysis-section graphs-section">
+                            <h3><ImageIcon size={16} /> Evaluation Graphs</h3>
+                            <div className="graphs-grid">
+                                {Object.entries(graphs).map(([name, src]) => (
+                                    <div key={name} className="graph-item card">
+                                        <div className="graph-header">
+                                            <h4>{name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</h4>
+                                        </div>
+                                        <div className="graph-img-wrap">
+                                            <img src={src} alt={name} loading="lazy" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>

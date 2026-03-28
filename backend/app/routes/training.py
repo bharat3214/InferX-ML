@@ -268,6 +268,273 @@ def start_training():
     }), 201
 
 
+@training_bp.route('/<int:experiment_id>/ensemble', methods=['POST'])
+@jwt_required()
+def ensemble_top_3(experiment_id):
+    """Combine top 3 models into a Voting Ensemble"""
+    user_id = int(get_jwt_identity())
+    experiment = Experiment.query.filter_by(id=experiment_id, user_id=user_id).first()
+    
+    if not experiment:
+        return jsonify({'error': 'Experiment not found'}), 404
+        
+    if experiment.status != 'completed' or experiment.problem_type not in ['classification', 'regression']:
+        return jsonify({'error': 'Experiment must be completed and be a tabular problem.'}), 400
+        
+    dataset = Dataset.query.get(experiment.dataset_id)
+    if not dataset:
+        return jsonify({'error': 'Dataset not found'}), 404
+        
+    experiment.status = 'training'
+    db.session.commit()
+    
+    import threading
+    from flask import current_app
+    app = current_app._get_current_object()
+    file_path = dataset.file_path
+    target_column = experiment.target_column
+    column_info = dataset.column_info
+    
+    def run_ensemble(app_instance):
+        with app_instance.app_context():
+            _run_ensemble_training(experiment_id, file_path, target_column, column_info)
+            
+    thread = threading.Thread(target=run_ensemble, args=(app,))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'message': 'Ensemble combination started'}), 200
+
+
+def _run_ensemble_training(experiment_id, file_path, target_column, column_info):
+    import pandas as pd
+    import numpy as np
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import accuracy_score, f1_score, r2_score, mean_squared_error
+    import joblib
+    import io
+    from app.services.explanation_engine import ExplanationEngine
+    
+    experiment = Experiment.query.get(experiment_id)
+    if not experiment: return
+    
+    _update_thinking_log(experiment, "🔮 Initializing Ultra-Accurate Ensemble Creation...")
+    
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        file_content = minio_service.download_bytes('datasets', file_path)
+        
+        if file_path.lower().endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(file_content))
+        else:
+            df = pd.read_csv(io.BytesIO(file_content))
+            
+        X = df.drop(columns=[target_column])
+        y = df[target_column]
+        
+        problem_type = experiment.problem_type
+        if problem_type == 'classification' and y.dtype == 'object':
+            from sklearn.preprocessing import LabelEncoder
+            y = LabelEncoder().fit_transform(y)
+            
+        preprocessor = CombinedPreprocessor()
+        X_scaled = preprocessor.fit_transform(X)
+        
+        X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+        
+        config = experiment.config or {}
+        if config.get('auto_balance', False) and problem_type == 'classification':
+             try:
+                 from imblearn.over_sampling import SMOTE
+                 X_train, y_train = SMOTE(random_state=42).fit_resample(X_train, y_train)
+             except ImportError:
+                 pass
+                 
+        _update_thinking_log(experiment, "🚀 Data re-processed. Identifying Top 3 models...")
+        
+        results = experiment.results or {}
+        all_models = results.get('all_models', [])
+        
+        top_3 = sorted(all_models, key=lambda x: x.get('score', 0), reverse=True)[:3]
+        top_3_names = [m['model'] for m in top_3]
+        _update_thinking_log(experiment, f"🏆 Top 3 combatants identified: {', '.join(top_3_names)}")
+        
+        estimators = []
+        n_estimators = int(config.get('n_estimators', 100))
+        max_depth = config.get('max_depth'); max_depth = int(max_depth) if max_depth else None
+        epochs = config.get('epochs'); max_iter = int(epochs) if epochs else 1000
+        
+        if problem_type == 'classification':
+             from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
+             from sklearn.svm import SVC
+             from sklearn.neighbors import KNeighborsClassifier
+             from sklearn.tree import DecisionTreeClassifier
+             from sklearn.linear_model import LogisticRegression
+             
+             model_map = {
+                 'Logistic Regression': LogisticRegression(max_iter=max_iter, random_state=42),
+                 'Random Forest': RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42),
+                 'Gradient Boosting': GradientBoostingClassifier(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5),
+                 'SVM': SVC(kernel='rbf', probability=True, random_state=42, max_iter=max_iter if epochs else -1),
+                 'KNN': KNeighborsClassifier(n_neighbors=5),
+                 'Decision Tree': DecisionTreeClassifier(random_state=42, max_depth=max_depth if max_depth else 10),
+                 'AdaBoost': AdaBoostClassifier(n_estimators=n_estimators, random_state=42),
+                 'Extra Trees': ExtraTreesClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42)
+             }
+             try:
+                 from xgboost import XGBClassifier
+                 model_map['XGBoost'] = XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='logloss')
+             except ImportError: pass
+             try:
+                 from lightgbm import LGBMClassifier
+                 model_map['LightGBM'] = LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)
+             except ImportError: pass
+             
+             for name in top_3_names:
+                 if name in model_map: estimators.append((name, model_map[name]))
+                     
+             if len(estimators) < 2: raise Exception("Not enough valid models to ensemble.")
+                 
+             from sklearn.ensemble import VotingClassifier
+             try:
+                 ensemble = VotingClassifier(estimators=estimators, voting='soft')
+                 _update_thinking_log(experiment, "☄️ Training Voting Ensemble (Soft Voting)...")
+                 ensemble.fit(X_train, y_train)
+             except Exception:
+                 ensemble = VotingClassifier(estimators=estimators, voting='hard')
+                 _update_thinking_log(experiment, "☄️ Training Voting Ensemble (Hard Voting)...")
+                 ensemble.fit(X_train, y_train)
+                 
+             y_pred = ensemble.predict(X_test)
+             score = float(accuracy_score(y_test, y_pred))
+             metrics = {'accuracy': score, 'f1_score': float(f1_score(y_test, y_pred, average='weighted'))}
+             
+        else:
+             from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+             from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, AdaBoostRegressor, ExtraTreesRegressor
+             from sklearn.svm import SVR
+             from sklearn.neighbors import KNeighborsRegressor
+             from sklearn.tree import DecisionTreeRegressor
+             
+             model_map = {
+                 'Linear Regression': LinearRegression(),
+                 'Ridge Regression': Ridge(random_state=42, max_iter=max_iter if epochs else None),
+                 'Lasso Regression': Lasso(random_state=42, max_iter=max_iter if epochs else 2000),
+                 'ElasticNet': ElasticNet(random_state=42, max_iter=max_iter if epochs else 2000),
+                 'Random Forest': RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42),
+                 'Gradient Boosting': GradientBoostingRegressor(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5),
+                 'SVR': SVR(kernel='rbf', max_iter=max_iter if epochs else -1),
+                 'KNN': KNeighborsRegressor(n_neighbors=5),
+                 'Decision Tree': DecisionTreeRegressor(random_state=42, max_depth=max_depth if max_depth else 10),
+                 'AdaBoost': AdaBoostRegressor(n_estimators=n_estimators, random_state=42),
+                 'Extra Trees': ExtraTreesRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)
+             }
+             try:
+                 from xgboost import XGBRegressor
+                 model_map['XGBoost'] = XGBRegressor(n_estimators=100, random_state=42)
+             except ImportError: pass
+             try:
+                 from lightgbm import LGBMRegressor
+                 model_map['LightGBM'] = LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
+             except ImportError: pass
+             
+             for name in top_3_names:
+                 if name in model_map: estimators.append((name, model_map[name]))
+                     
+             if len(estimators) < 2: raise Exception("Not enough valid models to ensemble.")
+                 
+             from sklearn.ensemble import VotingRegressor
+             ensemble = VotingRegressor(estimators=estimators)
+             _update_thinking_log(experiment, "☄️ Training Voting Ensemble...")
+             ensemble.fit(X_train, y_train)
+             
+             y_pred = ensemble.predict(X_test)
+             score = float(r2_score(y_test, y_pred))
+             metrics = {'r2_score': score, 'rmse': float(np.sqrt(mean_squared_error(y_test, y_pred)))}
+             
+        model_name = "Ensemble Super-Model (Top 3)"
+        job = TrainingJob(
+            experiment_id=experiment.id,
+            model_name=model_name,
+            status='completed',
+            metrics=metrics,
+            logs=f"✅ Ensemble Training completed.\n📊 Score: {score:.4f}\n"
+        )
+        db.session.add(job)
+        
+        all_models.append({'model': model_name, 'score': score, 'metrics': metrics})
+        from app.services.explanation_engine import ExplanationEngine
+        ExplanationEngine.emit_model_result(experiment, model_name, score, metrics, problem_type)
+        
+        best_score = float(experiment.best_score or 0)
+        zip_filename = experiment.results.get('model_package_path')
+        if score > best_score:
+            experiment.best_score = score
+            experiment.best_model_name = model_name
+            _update_thinking_log(experiment, f"👑 Ensemble Winner takes the crown! New best score: {score:.4f}")
+            
+            import tempfile
+            import sys
+            sys.path.insert(0, '/app')
+            from ml_engine.packaging.model_packager import ModelPackager, create_feature_schema
+            
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                packager = ModelPackager(tmp_dir)
+                feature_schema = create_feature_schema(df, target_column)
+                metadata = {
+                    'name': experiment.name,
+                    'experiment_id': experiment.id,
+                    'problem_type': problem_type,
+                    'target_column': target_column,
+                    'best_model': model_name,
+                    'best_score': score,
+                    'training_results': all_models
+                }
+                
+                prep = CombinedPreprocessor()
+                prep.fit_transform(X)
+                
+                package_dir = packager.package(
+                    model=ensemble,
+                    preprocessor=prep,
+                    feature_schema=feature_schema,
+                    metadata=metadata,
+                    model_format='pkl'
+                )
+                zip_path = packager.create_zip(package_dir)
+                zip_filename = f"user_{experiment.user_id}/experiment_{experiment.id}/model_package.zip"
+                with open(zip_path, 'rb') as f: zip_content = f.read()
+                minio_service.upload_bytes('models', zip_filename, zip_content, 'application/zip')
+                
+        else:
+            _update_thinking_log(experiment, f"📉 Ensemble evaluated ({score:.4f}), but previous best still holds.")
+        
+        updated_results = dict(experiment.results)
+        updated_results['all_models'] = all_models
+        updated_results['best_score'] = float(experiment.best_score)
+        updated_results['best_model'] = experiment.best_model_name
+        updated_results['model_package_path'] = zip_filename
+        
+        from app.services.ai_insight_generator import ai_insight_generator
+        try:
+             comparison_insight = ai_insight_generator.explain_model_comparison(
+                 all_results=all_models, best_model_name=experiment.best_model_name, target_column=target_column
+             )
+             ExplanationEngine.emit_insight(experiment, f"Combined {', '.join(top_3_names)} into an Ensemble Super-Model. Score: {score:.4f}. " + comparison_insight, 'model_comparison')
+        except: pass
+             
+        experiment.results = updated_results
+        experiment.status = 'completed'
+        db.session.commit()
+        
+    except Exception as e:
+        experiment.status = 'completed'
+        _update_thinking_log(experiment, f"❌ Ensemble failed: {str(e)}")
+        db.session.commit()
+        print(f"Ensemble failed: {e}")
+
+
 def _run_training_task(experiment_id, file_path, target_column, column_info):
     """Run the actual training task"""
     import pandas as pd
@@ -402,6 +669,23 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         # Split data
         _update_thinking_log(experiment, "✂️ Splitting data into training (80%) and test (20%) sets...")
         X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+        
+        # Extract configuration
+        config = experiment.config or {}
+        auto_balance = config.get('auto_balance', False)
+        
+        if auto_balance and problem_type == 'classification':
+            _update_thinking_log(experiment, "⚖️ Auto-Balancing: Applying SMOTE to generate synthetic minority records...")
+            try:
+                from imblearn.over_sampling import SMOTE
+                smote = SMOTE(random_state=42)
+                X_train, y_train = smote.fit_resample(X_train, y_train)
+                _update_thinking_log(experiment, f"✅ Auto-Balancing complete. New training size: {len(X_train):,} samples")
+                ExplanationEngine.emit_insight(experiment, f"Applied SMOTE to generate synthetic data for minority classes. Training set balanced with {len(X_train)} samples.", 'preprocessing')
+            except ImportError:
+                _update_thinking_log(experiment, "⚠️ imbalanced-learn not installed. Skipping auto-balancing.")
+                print("⚠️ imbalanced-learn not installed. Skipping auto-balancing.")
+        
         _update_thinking_log(experiment, f"✅ Data prepared: {len(X_train):,} training samples, {len(X_test):,} test samples")
         
         # Emit trust data
@@ -537,7 +821,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                     job.metrics = {'r2_score': score, 'rmse': rmse}
                     log_msg = f"✅ Training completed.\n📊 R² Score: {score:.4f}\n📊 RMSE: {rmse:.4f}\n"
                 
-                job.cv_score = score
+                # job.cv_score = score # Not in DB model
                 job.status = 'completed'
                 job.logs += log_msg
                 db.session.commit()
