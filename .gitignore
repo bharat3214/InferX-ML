@@ -157,3 +157,8 @@ temp/
 .vercel/
 .turbo/
 .cache/
+
+
+# md files
+
+model.md

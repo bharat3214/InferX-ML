@@ -13,7 +13,7 @@ import './Predictions.css'
 // Streamlit URL - runs on port 8501
 const STREAMLIT_URL = window.location.hostname === 'localhost'
     ? 'http://localhost:8501'
-    : `http://${window.location.hostname}:8501`
+    : `${window.location.origin}/streamlit`
 
 export default function Predictions() {
     const { modelId } = useParams()
