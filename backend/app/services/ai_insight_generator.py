@@ -15,7 +15,7 @@ class AIInsightGenerator:
     def __init__(self):
         self.gemini_key = os.getenv('GEMINI_API_KEY')
         self.groq_key = os.getenv('GROQ_API_KEY')
-        self.gemini_model = 'gemini-1.5-flash'
+        self.gemini_model = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
         self.groq_model = 'llama-3.1-8b-instant' # Updated Llama 3.1 on Groq
     
     def _call_ai(self, prompt: str, max_tokens: int = 200) -> str:

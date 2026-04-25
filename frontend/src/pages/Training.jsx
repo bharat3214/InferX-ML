@@ -84,7 +84,7 @@ export default function Training() {
         : null
 
     // Polling for status
-    const { data: statusData } = useQuery({
+    const { data: statusData, refetch: refetchStatus } = useQuery({
         queryKey: ['training-status', currentJob?.id],
         queryFn: () => trainingApi.getStatus(currentJob.id),
         enabled: !!currentJob,
@@ -92,7 +92,7 @@ export default function Training() {
     })
 
     // Polling for logs
-    const { data: logsData } = useQuery({
+    const { data: logsData, refetch: refetchLogs } = useQuery({
         queryKey: ['training-logs', currentJob?.id],
         queryFn: () => trainingApi.getLogs(currentJob.id),
         enabled: !!currentJob,
@@ -100,7 +100,7 @@ export default function Training() {
     })
 
     // Polling for thinking logs
-    const { data: thinkingData } = useQuery({
+    const { data: thinkingData, refetch: refetchThinking } = useQuery({
         queryKey: ['training-thinking', currentJob?.id],
         queryFn: () => trainingApi.getThinkingLogs(currentJob.id),
         enabled: !!currentJob,
@@ -147,10 +147,33 @@ export default function Training() {
         ensembleMutation.mutate(currentJob.id)
     }
 
-    // Check for completion
-    if (isTraining && statusData?.data?.experiment?.status === 'completed') {
-        setIsTraining(false)
-    }
+    // Check for completion after one final refresh so the UI receives 100% progress.
+    useEffect(() => {
+        const status = statusData?.data?.experiment?.status
+        const isTerminal = ['completed', 'failed', 'cancelled'].includes(status)
+
+        if (!isTraining || !isTerminal) return
+
+        let isCurrent = true
+
+        const fetchFinalState = async () => {
+            await Promise.allSettled([
+                refetchStatus(),
+                refetchLogs(),
+                refetchThinking()
+            ])
+
+            if (isCurrent) {
+                setIsTraining(false)
+            }
+        }
+
+        fetchFinalState()
+
+        return () => {
+            isCurrent = false
+        }
+    }, [isTraining, statusData?.data?.experiment?.status, refetchStatus, refetchLogs, refetchThinking])
 
     // AI Prompt Analysis Handler
     const handleAnalyzeWithAI = async () => {
@@ -671,27 +694,7 @@ export default function Training() {
                                             })}
                                         </div>
 
-                                        {/* ENSEMBLE BUTTON FOR TABULAR DATA */}
-                                        {!isImageDataset && experimentStatus === 'completed' && sortedJobs.filter(j => j.status === 'completed').length >= 3 && !sortedJobs.some(j => j.model_name.toLowerCase().includes('ensemble')) && (
-                                            <div className="ensemble-action-banner">
-                                                <div className="ensemble-text">
-                                                    <Brain size={16} />
-                                                    <span><strong>Pro Feature:</strong> Combine Top 3 models for ultra-high accuracy!</span>
-                                                </div>
-                                                <button 
-                                                    className="btn btn-primary ensemble-action-btn" 
-                                                    onClick={handleCombineTop3}
-                                                    disabled={isEnsembling}
-                                                >
-                                                    {isEnsembling ? (
-                                                        <>
-                                                            <div className="spinner" style={{ width: 14, height: 14, borderColor: 'white', borderTopColor: 'transparent' }}></div>
-                                                            Merging...
-                                                        </>
-                                                    ) : 'Combine Top 3'}
-                                                </button>
-                                            </div>
-                                        )}
+
                                     </div>
                                 )}
 
@@ -699,8 +702,6 @@ export default function Training() {
                                 <LearningTimeline
                                     explanationData={explanationData}
                                     isTraining={isTraining}
-                                    onEnsemble={handleCombineTop3}
-                                    isEnsembling={isEnsembling}
                                 />
 
                                 {/* Training Success */}

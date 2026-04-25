@@ -1,6 +1,7 @@
 """
 Explanation Engine Service
 Transforms ML training events into human-friendly explanations
+Following the real ML lifecycle: Preprocessing → Feature Engineering → Model Dev → Evaluation → Ready
 """
 from datetime import datetime
 import json
@@ -8,53 +9,46 @@ import json
 
 class ExplanationEngine:
     """Generates human-friendly explanations for ML training events"""
-    
-    # Learning phases with human-friendly descriptions
+
+    # ML Lifecycle phases
     PHASES = {
-        'understanding': {
-            'id': 'understanding',
-            'title': 'Understanding Your Data',
-            'description': 'The AI is exploring your dataset to understand what information is available.',
-            'why': 'Like reading a book before answering questions about it.',
-            'icon': '📊'
+        'preprocessing': {
+            'id': 'preprocessing',
+            'title': 'Data Preprocessing',
+            'description': 'Loading, cleaning, and preparing your raw data for model training.',
+            'why': 'Clean data is the foundation of any accurate model.',
+            'icon': '🔧'
         },
-        'learning': {
-            'id': 'learning',
-            'title': 'Learning Patterns',
-            'description': 'Finding relationships between your input data and what you want to predict.',
-            'why': 'Discovering the "rules" hidden in your data.',
+        'feature_engineering': {
+            'id': 'feature_engineering',
+            'title': 'Feature Engineering & Selection',
+            'description': 'Transforming raw columns into meaningful features the model can learn from.',
+            'why': 'Better features lead to better predictions.',
+            'icon': '⚙️'
+        },
+        'model_development': {
+            'id': 'model_development',
+            'title': 'Model Development',
+            'description': 'Training multiple algorithms and tuning their parameters.',
+            'why': 'Different algorithms suit different data patterns.',
             'icon': '🧠'
         },
-        'testing': {
-            'id': 'testing',
-            'title': 'Testing Learning Strategies',
-            'description': 'Trying different approaches to see which one learns best.',
-            'why': 'Different problems need different teaching methods.',
-            'icon': '🧪'
-        },
-        'comparing': {
-            'id': 'comparing',
-            'title': 'Comparing Model Behaviors',
-            'description': 'Measuring how well each approach performs on new, unseen examples.',
-            'why': 'The true test is predicting things it hasn\'t seen before.',
-            'icon': '⚖️'
-        },
-        'choosing': {
-            'id': 'choosing',
-            'title': 'Choosing the Best Model',
-            'description': 'Selecting the approach that gave the most accurate predictions.',
-            'why': 'We want the model that will work best for your real use case.',
+        'evaluation': {
+            'id': 'evaluation',
+            'title': 'Best Model & Evaluation',
+            'description': 'Comparing all models on unseen data and selecting the champion.',
+            'why': 'The true test is performance on data the model has never seen.',
             'icon': '🏆'
         },
         'ready': {
             'id': 'ready',
-            'title': 'Final Model Ready',
-            'description': 'Your trained model is ready to make predictions!',
-            'why': 'You can now use this to predict outcomes for new data.',
-            'icon': '✨'
+            'title': 'Deployment Ready',
+            'description': 'Your trained model is packaged and ready for predictions!',
+            'why': 'You can now use this model in production.',
+            'icon': '🚀'
         }
     }
-    
+
     # Human-friendly model explanations
     MODEL_EXPLANATIONS = {
         'Logistic Regression': {
@@ -160,7 +154,7 @@ class ExplanationEngine:
             'limitations': ['Can overfit', 'Unstable with small changes']
         }
     }
-    
+
     @classmethod
     def init_explanation_data(cls):
         """Initialize empty explanation data structure"""
@@ -176,25 +170,23 @@ class ExplanationEngine:
                 'confidence': None
             },
             'summary': None,
-            'progress': 0  # Overall progress percentage
+            'progress': 0
         }
-    
+
     @classmethod
     def emit_phase(cls, experiment, phase_id, details=None):
         """Emit a learning phase update"""
         from app import db
-        
+
         try:
             phase_info = cls.PHASES.get(phase_id, {})
-            
-            # Initialize if needed
+
             if not experiment.explanation_data:
                 experiment.explanation_data = cls.init_explanation_data()
-            
+
             data = dict(experiment.explanation_data)
             data['current_phase'] = phase_id
-            
-            # Add to phases list
+
             phase_entry = {
                 'id': phase_id,
                 'title': phase_info.get('title', phase_id),
@@ -205,71 +197,73 @@ class ExplanationEngine:
                 'completed_at': None,
                 'details': details or {}
             }
-            
-            # Check if phase already exists and update it
+
             existing = False
             for i, p in enumerate(data['phases']):
                 if p['id'] == phase_id:
                     data['phases'][i] = phase_entry
                     existing = True
                     break
-            
+
             if not existing:
-                # Complete previous phase
                 if len(data['phases']) > 0:
                     data['phases'][-1]['completed_at'] = datetime.now().isoformat()
                 data['phases'].append(phase_entry)
-            
-            experiment.explanation_data = data
-            
-            # Calculate and update progress
+
             data['progress'] = cls._calculate_progress(data)
             experiment.explanation_data = data
-            
+
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(experiment, 'explanation_data')
+
             db.session.commit()
             print(f"📍 Phase: {phase_info.get('title', phase_id)} ({data['progress']}% complete)", flush=True)
-            
+
         except Exception as e:
             print(f"⚠️ ExplanationEngine.emit_phase error: {e}", flush=True)
-    
+
     @classmethod
     def emit_insight(cls, experiment, message, category='general'):
         """Emit a human-readable insight"""
         from app import db
-        
+
         try:
             if not experiment.explanation_data:
                 experiment.explanation_data = cls.init_explanation_data()
-            
+
             data = dict(experiment.explanation_data)
-            
+
             insight = {
                 'message': message,
                 'category': category,
                 'phase': data.get('current_phase'),
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             data['insights'].append(insight)
             experiment.explanation_data = data
+
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(experiment, 'explanation_data')
+
             db.session.commit()
             print(f"💡 Insight: {message}", flush=True)
-            
+
         except Exception as e:
             print(f"⚠️ ExplanationEngine.emit_insight error: {e}", flush=True)
-    
+
     @classmethod
     def emit_model_start(cls, experiment, model_name):
         """Emit when a model starts training"""
         from app import db
-        
+
         try:
             if not experiment.explanation_data:
                 experiment.explanation_data = cls.init_explanation_data()
-            
+
             data = dict(experiment.explanation_data)
             model_info = cls.MODEL_EXPLANATIONS.get(model_name, {})
-            
+
             model_entry = {
                 'name': model_name,
                 'learning_style': model_info.get('learning_style', f'Training {model_name}...'),
@@ -282,56 +276,61 @@ class ExplanationEngine:
                 'score': None,
                 'metrics': {}
             }
-            
+
             data['models'].append(model_entry)
             experiment.explanation_data = data
+
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(experiment, 'explanation_data')
+
             db.session.commit()
-            print(f"🤖 Model: {model_name} - {model_info.get('learning_style', 'Training...')}", flush=True)
-            
+
         except Exception as e:
             print(f"⚠️ ExplanationEngine.emit_model_start error: {e}", flush=True)
-    
+
     @classmethod
     def emit_model_result(cls, experiment, model_name, score, metrics=None, problem_type='classification'):
         """Emit when a model finishes training"""
         from app import db
-        
+
         try:
             if not experiment.explanation_data:
                 return
-            
+
             data = dict(experiment.explanation_data)
-            
-            # Find and update the model
+
             for model in data['models']:
                 if model['name'] == model_name:
                     model['status'] = 'completed'
                     model['completed_at'] = datetime.now().isoformat()
                     model['score'] = score
                     model['metrics'] = metrics or {}
-                    
-                    # Generate human-friendly result message
+
                     if problem_type == 'classification':
                         model['result_message'] = f"Correctly predicted {score*100:.1f}% of examples"
                     else:
                         model['result_message'] = f"Predictions were {score*100:.1f}% accurate on average"
                     break
-            
+
             experiment.explanation_data = data
+
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(experiment, 'explanation_data')
+
             db.session.commit()
-            
+
         except Exception as e:
             print(f"⚠️ ExplanationEngine.emit_model_result error: {e}", flush=True)
-    
+
     @classmethod
     def emit_trust_data(cls, experiment, data_size, train_size, test_size, confidence='high'):
         """Emit trust and safety metrics"""
         from app import db
-        
+
         try:
             if not experiment.explanation_data:
                 experiment.explanation_data = cls.init_explanation_data()
-            
+
             data = dict(experiment.explanation_data)
             data['trust'] = {
                 'data_size': data_size,
@@ -342,47 +341,51 @@ class ExplanationEngine:
                 'confidence': confidence,
                 'confidence_reasons': cls._get_confidence_reasons(data_size, confidence)
             }
-            
+
             experiment.explanation_data = data
+
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(experiment, 'explanation_data')
+
             db.session.commit()
-            
+
         except Exception as e:
             print(f"⚠️ ExplanationEngine.emit_trust_data error: {e}", flush=True)
-    
+
     @classmethod
     def _get_confidence_reasons(cls, data_size, confidence):
         """Generate confidence reasons based on data"""
         reasons = []
-        
+
         if data_size >= 1000:
             reasons.append("Trained on a substantial dataset")
         elif data_size >= 500:
             reasons.append("Trained on a moderate dataset")
         else:
             reasons.append("Limited training data available")
-        
+
         reasons.append("Tested on held-out examples never seen during training")
         reasons.append("Results were consistent across multiple model types")
-        
+
         return reasons
-    
+
     @classmethod
     def emit_final_summary(cls, experiment, best_model, best_score, problem_type, target_column, feature_count):
         """Emit the final summary for the user"""
         from app import db
-        
+
         try:
             if not experiment.explanation_data:
                 return
-            
+
             data = dict(experiment.explanation_data)
             model_info = cls.MODEL_EXPLANATIONS.get(best_model, {})
-            
+
             # Mark ALL previous phases as complete
             for phase in data['phases']:
                 if not phase.get('completed_at'):
                     phase['completed_at'] = datetime.now().isoformat()
-            
+
             data['summary'] = {
                 'best_model': best_model,
                 'best_score': best_score,
@@ -395,21 +398,19 @@ class ExplanationEngine:
                 'model_strengths': model_info.get('strengths', []),
                 'model_limitations': model_info.get('limitations', [])
             }
-            
-            # Set progress to 100%
+
             data['progress'] = 100
-            
+
             experiment.explanation_data = data
-            
-            # Force SQLAlchemy to detect the JSON change
+
             from sqlalchemy.orm.attributes import flag_modified
             flag_modified(experiment, 'explanation_data')
-            
+
             db.session.commit()
-            
+
         except Exception as e:
             print(f"⚠️ ExplanationEngine.emit_final_summary error: {e}", flush=True)
-    
+
     @classmethod
     def _generate_meaning(cls, model_name, target_column, problem_type):
         """Generate what the model means for the user"""
@@ -417,27 +418,21 @@ class ExplanationEngine:
             return f"When you provide new data, the model will predict the {target_column} category with high confidence."
         else:
             return f"When you provide new data, the model will estimate the {target_column} value based on learned patterns."
-    
+
     @classmethod
     def generate_data_insights(cls, df, target_column):
         """Generate insights about the data"""
         insights = []
-        
-        # Data size insight
         insights.append(f"Your data contains {len(df):,} examples to learn from.")
-        
-        # Feature count
         feature_count = len(df.columns) - 1
         insights.append(f"Found {feature_count} different factors that might influence predictions.")
-        
-        # Target insight
+
         if df[target_column].dtype == 'object' or df[target_column].nunique() < 20:
             unique_count = df[target_column].nunique()
             insights.append(f"The model will learn to predict {unique_count} different categories.")
         else:
             insights.append(f"The model will learn to predict numeric values for {target_column}.")
-        
-        # Try to find important features (basic correlation check)
+
         try:
             numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
             if target_column in numeric_cols and len(numeric_cols) > 1:
@@ -448,29 +443,39 @@ class ExplanationEngine:
                     insights.append(f"Key factors that may influence predictions: {', '.join(top_features)}")
         except:
             pass
-        
+
         return insights
-    
+
     @classmethod
     def _calculate_progress(cls, data):
         """Calculate overall progress percentage based on phases"""
-        # If summary exists, training is 100% complete
         if data.get('summary'):
             return 100
-        
-        total_phases = 6  # understanding, learning, testing, comparing, choosing, ready
-        completed_phases = sum(1 for p in data.get('phases', []) if p.get('completed_at'))
-        
-        # Base progress on completed phases
-        base_progress = int((completed_phases / total_phases) * 100)
-        
-        # If currently in a phase, add partial progress
+
+        # Phase weights: preprocessing=15%, feature_eng=15%, model_dev=40%, evaluation=20%, ready=10%
+        phase_weights = {
+            'preprocessing': 15,
+            'feature_engineering': 15,
+            'model_development': 40,
+            'evaluation': 20,
+            'ready': 10
+        }
+
+        progress = 0
         current_phase = data.get('current_phase')
-        if current_phase and completed_phases < total_phases:
-            # Add 50% of current phase progress
-            base_progress += int((1 / total_phases) * 50)
-        
-        return min(base_progress, 100)
+
+        for phase in data.get('phases', []):
+            pid = phase.get('id')
+            weight = phase_weights.get(pid, 10)
+
+            if phase.get('completed_at'):
+                # Completed phase: full weight
+                progress += weight
+            elif pid == current_phase:
+                # Active phase: half weight
+                progress += weight * 0.5
+
+        return min(int(progress), 100)
 
 
 # Singleton instance for easy access

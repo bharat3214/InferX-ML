@@ -1,266 +1,256 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, CheckCircle, Loader, Circle, Brain, Shield } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronRight, CheckCircle, Loader, Circle, Shield, Activity, Clock } from 'lucide-react';
 import './LearningTimeline.css';
 
-// Phase Card Component
+/**
+ * Format a timestamp to a short relative or clock time
+ */
+const formatTime = (isoString) => {
+    if (!isoString) return '';
+    try {
+        const d = new Date(isoString);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch { return ''; }
+};
+
+/**
+ * Calculate elapsed duration between two ISO timestamps
+ */
+const formatDuration = (start, end) => {
+    if (!start) return '';
+    const s = new Date(start);
+    const e = end ? new Date(end) : new Date();
+    const diff = Math.max(0, Math.round((e - s) / 1000));
+    if (diff < 60) return `${diff}s`;
+    const mins = Math.floor(diff / 60);
+    const secs = diff % 60;
+    return `${mins}m ${secs}s`;
+};
+
+// ─── Phase Card: Dynamic, insight-driven ───
 const PhaseCard = ({ phase, isActive, isComplete, insights, isExpanded, onToggle }) => {
-    const statusIcon = isComplete 
-        ? <CheckCircle size={20} className="phase-icon complete" />
-        : isActive 
-            ? <Loader size={20} className="phase-icon active spin" />
-            : <Circle size={20} className="phase-icon pending" />;
-    
+    const statusIcon = isComplete
+        ? <CheckCircle size={18} className="lt-phase-icon lt-complete" />
+        : isActive
+            ? <Loader size={18} className="lt-phase-icon lt-active lt-spin" />
+            : <Circle size={18} className="lt-phase-icon lt-pending" />;
+
+    // Dynamic subtitle: show the latest insight for this phase, or the phase description
+    const latestInsight = insights.length > 0 ? insights[insights.length - 1].message : null;
+    const subtitle = isActive && latestInsight
+        ? latestInsight
+        : isComplete && latestInsight
+            ? latestInsight
+            : phase.description;
+
     return (
-        <div className={`phase-card ${isComplete ? 'complete' : ''} ${isActive ? 'active' : ''}`}>
-            <div className="phase-header" onClick={onToggle}>
-                {statusIcon}
-                <div className="phase-info">
-                    <span className="phase-icon-emoji">{phase.icon}</span>
-                    <h4 className="phase-title">{phase.title}</h4>
+        <div className={`lt-phase-card ${isComplete ? 'lt-card-complete' : ''} ${isActive ? 'lt-card-active' : ''}`}>
+            <div className="lt-phase-header" onClick={onToggle}>
+                <div className="lt-phase-left">
+                    {statusIcon}
+                    <span className="lt-phase-emoji">{phase.icon}</span>
+                    <div className="lt-phase-title-group">
+                        <h4 className="lt-phase-title">{phase.title}</h4>
+                        <p className="lt-phase-subtitle">{subtitle}</p>
+                    </div>
                 </div>
-                {(insights.length > 0 || phase.description) && (
-                    isExpanded 
-                        ? <ChevronDown size={18} className="expand-icon" />
-                        : <ChevronRight size={18} className="expand-icon" />
-                )}
-            </div>
-            
-            {isExpanded && (
-                <div className="phase-content">
-                    <p className="phase-description">{phase.description}</p>
-                    {phase.why && (
-                        <p className="phase-why"><em>Why: {phase.why}</em></p>
+                <div className="lt-phase-right">
+                    {phase.started_at && (
+                        <span className="lt-phase-time">
+                            <Clock size={12} />
+                            {formatDuration(phase.started_at, phase.completed_at)}
+                        </span>
                     )}
-                    
                     {insights.length > 0 && (
-                        <div className="phase-insights">
-                            {insights.map((insight, idx) => (
-                                <div key={idx} className="insight-item">
-                                    <span className="insight-bullet">💡</span>
-                                    <span>{insight.message}</span>
-                                </div>
-                            ))}
-                        </div>
+                        isExpanded
+                            ? <ChevronDown size={16} className="lt-expand-icon" />
+                            : <ChevronRight size={16} className="lt-expand-icon" />
                     )}
                 </div>
-            )}
-        </div>
-    );
-};
-
-// Model Card Component
-const ModelCard = ({ model, isExpanded, onToggle }) => {
-    const isTraining = model.status === 'training';
-    const isComplete = model.status === 'completed';
-    
-    return (
-        <div className={`model-card ${isComplete ? 'complete' : ''} ${isTraining ? 'training' : ''}`}>
-            <div className="model-header" onClick={onToggle}>
-                {isTraining ? (
-                    <Loader size={16} className="model-status spin" />
-                ) : isComplete ? (
-                    <CheckCircle size={16} className="model-status complete" />
-                ) : (
-                    <Circle size={16} className="model-status" />
-                )}
-                <span className="model-name">{model.name}</span>
-                {model.score && (
-                    <span className="model-score">{(model.score * 100).toFixed(1)}%</span>
-                )}
-                {(model.learning_style || model.strengths?.length > 0) && (
-                    isExpanded 
-                        ? <ChevronDown size={14} className="expand-icon" />
-                        : <ChevronRight size={14} className="expand-icon" />
-                )}
             </div>
-            
-            {isExpanded && (
-                <div className="model-details">
-                    {model.learning_style && (
-                        <p className="model-learning-style">{model.learning_style}</p>
-                    )}
-                    {model.analogy && (
-                        <p className="model-analogy"><em>{model.analogy}</em></p>
-                    )}
-                    {model.result_message && (
-                        <p className="model-result">{model.result_message}</p>
-                    )}
-                    
-                    {model.strengths?.length > 0 && (
-                        <div className="model-traits">
-                            <span className="traits-label">✔ Strengths:</span>
-                            <ul>
-                                {model.strengths.map((s, i) => <li key={i}>{s}</li>)}
-                            </ul>
-                        </div>
-                    )}
-                    
-                    {model.limitations?.length > 0 && (
-                        <div className="model-traits limitations">
-                            <span className="traits-label">⚠ Limitations:</span>
-                            <ul>
-                                {model.limitations.map((l, i) => <li key={i}>{l}</li>)}
-                            </ul>
-                        </div>
-                    )}
+
+            {isExpanded && insights.length > 0 && (
+                <div className="lt-phase-details">
+                    <div className="lt-insight-feed">
+                        {insights.map((insight, idx) => (
+                            <div key={idx} className="lt-insight-row">
+                                <span className="lt-insight-time">{formatTime(insight.timestamp)}</span>
+                                <span className="lt-insight-dot" />
+                                <span className="lt-insight-msg">{insight.message}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>
     );
 };
 
-// Trust Panel Component
+// ─── Trust Panel ───
 const TrustPanel = ({ trust }) => {
     if (!trust || !trust.data_size) return null;
-    
+
     return (
-        <div className="trust-panel">
-            <div className="trust-header">
-                <Shield size={18} />
-                <span>Trust & Safety</span>
+        <div className="lt-trust">
+            <div className="lt-trust-header">
+                <Shield size={16} />
+                <span>Validation & Trust</span>
             </div>
-            <div className="trust-content">
-                <div className="trust-item">
-                    <span className="trust-check">✅</span>
-                    <span>Trained on {trust.data_size?.toLocaleString()} real examples</span>
+            <div className="lt-trust-grid">
+                <div className="lt-trust-stat">
+                    <span className="lt-trust-val">{trust.data_size?.toLocaleString()}</span>
+                    <span className="lt-trust-lbl">Training Samples</span>
                 </div>
-                <div className="trust-item">
-                    <span className="trust-check">✅</span>
-                    <span>Tested on {trust.test_size?.toLocaleString()} held-out examples ({trust.test_ratio})</span>
+                <div className="lt-trust-stat">
+                    <span className="lt-trust-val">{trust.test_size?.toLocaleString()}</span>
+                    <span className="lt-trust-lbl">Test Holdout ({trust.test_ratio})</span>
                 </div>
-                {trust.confidence_reasons?.map((reason, idx) => (
-                    <div key={idx} className="trust-item">
-                        <span className="trust-check">✅</span>
-                        <span>{reason}</span>
-                    </div>
-                ))}
-                <div className="trust-confidence">
-                    Confidence: <span className={`confidence-badge ${trust.confidence}`}>{trust.confidence}</span>
+                <div className="lt-trust-stat">
+                    <span className={`lt-trust-badge lt-conf-${trust.confidence}`}>{trust.confidence}</span>
+                    <span className="lt-trust-lbl">Confidence Level</span>
                 </div>
             </div>
+            {trust.confidence_reasons?.length > 0 && (
+                <div className="lt-trust-reasons">
+                    {trust.confidence_reasons.map((reason, idx) => (
+                        <div key={idx} className="lt-trust-reason">
+                            <CheckCircle size={12} className="lt-trust-check" />
+                            <span>{reason}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
 
-// Final Summary Component
-const FinalSummary = ({ summary, onEnsemble, isEnsembling }) => {
+// ─── Final Summary: Clean, no ensemble upsell ───
+const FinalSummary = ({ summary }) => {
     if (!summary) return null;
-    
-    // Check if ensemble already exists in model list
-    const hasEnsemble = summary.best_model.includes("Ensemble");
-    
+
     return (
-        <div className="final-summary">
-            <div className="summary-header">
-                <span className="summary-icon">🎉</span>
-                <h3>Your {hasEnsemble ? 'Super-Model' : 'Model'} is Ready!</h3>
-            </div>
-            
-            <div className="summary-section">
-                <h4>🏆 Best Performer: {summary.best_model}</h4>
-                <p className="score-display">Accuracy: {summary.score_display}</p>
+        <div className="lt-summary">
+            <div className="lt-summary-banner">
+                <span className="lt-summary-icon">🎉</span>
+                <div>
+                    <h3 className="lt-summary-title">Model Training Complete</h3>
+                    <p className="lt-summary-sub">Your AI model is ready for predictions</p>
+                </div>
             </div>
 
-            {!hasEnsemble && (
-                <div className="ensemble-upsell">
-                    <div className="upsell-text">
-                        <Brain size={16} className="upsell-icon" />
-                        <span>Want even higher accuracy? Combine the strengths of your Top 3 models.</span>
-                    </div>
-                    <button 
-                        className="ensemble-btn" 
-                        onClick={onEnsemble} 
-                        disabled={isEnsembling}
-                    >
-                        {isEnsembling ? (
-                            <><Loader size={14} className="spin" /> Creating Super-Model...</>
-                        ) : (
-                            "Combine Top 3 (Voting Ensemble)"
-                        )}
-                    </button>
+            <div className="lt-summary-result">
+                <div className="lt-summary-model">
+                    <span className="lt-summary-label">Best Model</span>
+                    <span className="lt-summary-value">{summary.best_model}</span>
                 </div>
-            )}
-            
-            <div className="summary-section">
-                <h4>Why This Model?</h4>
-                <p>{summary.why_chosen}</p>
-            </div>
-            
-            <div className="summary-section">
-                <h4>What This Means</h4>
-                <p>{summary.what_it_means}</p>
-            </div>
-            
-            {summary.model_strengths?.length > 0 && (
-                <div className="summary-section strengths">
-                    <h4>✔ Strengths</h4>
-                    <ul>
-                        {summary.model_strengths.map((s, i) => <li key={i}>{s}</li>)}
-                    </ul>
+                <div className="lt-summary-score">
+                    <span className="lt-summary-label">Accuracy</span>
+                    <span className="lt-summary-value lt-score-highlight">{summary.score_display}</span>
                 </div>
-            )}
-            
-            {summary.model_limitations?.length > 0 && (
-                <div className="summary-section limitations">
-                    <h4>⚠ Keep in Mind</h4>
-                    <ul>
-                        {summary.model_limitations.map((l, i) => <li key={i}>{l}</li>)}
-                    </ul>
+            </div>
+
+            <div className="lt-summary-explain">
+                <div className="lt-explain-block">
+                    <h5>Why This Model?</h5>
+                    <p>{summary.why_chosen}</p>
+                </div>
+                <div className="lt-explain-block">
+                    <h5>What This Means</h5>
+                    <p>{summary.what_it_means}</p>
+                </div>
+            </div>
+
+            {(summary.model_strengths?.length > 0 || summary.model_limitations?.length > 0) && (
+                <div className="lt-summary-traits">
+                    {summary.model_strengths?.length > 0 && (
+                        <div className="lt-trait-col lt-trait-good">
+                            <h5>✔ Strengths</h5>
+                            <ul>
+                                {summary.model_strengths.map((s, i) => <li key={i}>{s}</li>)}
+                            </ul>
+                        </div>
+                    )}
+                    {summary.model_limitations?.length > 0 && (
+                        <div className="lt-trait-col lt-trait-warn">
+                            <h5>⚠ Considerations</h5>
+                            <ul>
+                                {summary.model_limitations.map((l, i) => <li key={i}>{l}</li>)}
+                            </ul>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
     );
 };
 
+// ═══════════════════════════════════════════
 // Main Learning Timeline Component
-const LearningTimeline = ({ explanationData, isTraining, onEnsemble, isEnsembling }) => {
+// ═══════════════════════════════════════════
+const LearningTimeline = ({ explanationData, isTraining }) => {
     const [expandedPhases, setExpandedPhases] = useState({});
-    const [expandedModels, setExpandedModels] = useState({});
-    const [showModels, setShowModels] = useState(true);
-    
+    const feedRef = useRef(null);
+
+    // Auto-expand the currently active phase
+    useEffect(() => {
+        if (explanationData?.current_phase) {
+            setExpandedPhases(prev => ({ ...prev, [explanationData.current_phase]: true }));
+        }
+    }, [explanationData?.current_phase]);
+
+    // Auto-scroll feed when new insights appear
+    useEffect(() => {
+        if (feedRef.current) {
+            feedRef.current.scrollTop = feedRef.current.scrollHeight;
+        }
+    }, [explanationData?.insights?.length]);
+
     if (!explanationData || !explanationData.phases?.length) {
         return (
-            <div className="learning-timeline empty">
-                <div className="timeline-header">
-                    <Brain size={20} />
-                    <span>AI Learning Progress</span>
+            <div className="lt-container lt-empty">
+                <div className="lt-header">
+                    <Activity size={18} />
+                    <span>Training Activity</span>
                 </div>
-                <p className="timeline-empty-msg">Waiting to start training...</p>
+                <p className="lt-empty-msg">Start training to see live AI progress here…</p>
             </div>
         );
     }
-    
-    const { phases, insights, models, trust, summary, current_phase } = explanationData;
-    
+
+    const { phases, insights, trust, summary, current_phase } = explanationData;
+    const progress = explanationData.progress || 0;
+
     const togglePhase = (phaseId) => {
         setExpandedPhases(prev => ({ ...prev, [phaseId]: !prev[phaseId] }));
     };
-    
-    const toggleModel = (modelName) => {
-        setExpandedModels(prev => ({ ...prev, [modelName]: !prev[modelName] }));
-    };
-    
+
     return (
-        <div className="learning-timeline">
-            <div className="timeline-header">
-                <Brain size={20} />
-                <span>AI Learning Progress</span>
-                {isTraining && <div className="thinking-dots"><span></span><span></span><span></span></div>}
-            </div>
-            
-            {/* Progress Bar */}
-            <div className="progress-bar-container">
-                <div className="progress-bar-track">
-                    <div 
-                        className="progress-bar-fill" 
-                        style={{ width: `${explanationData.progress || 0}%` }}
-                    >
-                        <span className="progress-text">{explanationData.progress || 0}%</span>
+        <div className="lt-container">
+            {/* Header */}
+            <div className="lt-header">
+                <Activity size={18} />
+                <span>Training Activity</span>
+                {isTraining && (
+                    <div className="lt-live-indicator">
+                        <span className="lt-live-dot" />
+                        <span>LIVE</span>
                     </div>
+                )}
+                <span className="lt-progress-pct">{progress}%</span>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="lt-progress-wrap">
+                <div className="lt-progress-track">
+                    <div
+                        className={`lt-progress-fill ${progress >= 100 ? 'lt-progress-done' : ''}`}
+                        style={{ width: `${progress}%` }}
+                    />
                 </div>
             </div>
-            
-            <div className="timeline-phases">
+
+            {/* Phase Timeline */}
+            <div className="lt-phases" ref={feedRef}>
                 {phases.map((phase) => (
                     <PhaseCard
                         key={phase.id}
@@ -273,38 +263,10 @@ const LearningTimeline = ({ explanationData, isTraining, onEnsemble, isEnsemblin
                     />
                 ))}
             </div>
-            
-            {models?.length > 0 && (
-                <div className="models-section">
-                    <div className="models-header" onClick={() => setShowModels(!showModels)}>
-                        <span>Models Tested ({models.length})</span>
-                        {showModels ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    </div>
-                    
-                    {showModels && (
-                        <div className="models-list">
-                            {models.map((model, idx) => (
-                                <ModelCard
-                                    key={idx}
-                                    model={model}
-                                    isExpanded={expandedModels[model.name]}
-                                    onToggle={() => toggleModel(model.name)}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-            
+
             <TrustPanel trust={trust} />
-            
-            {summary && (
-                <FinalSummary 
-                    summary={summary} 
-                    onEnsemble={onEnsemble} 
-                    isEnsembling={isEnsembling} 
-                />
-            )}
+
+            {summary && <FinalSummary summary={summary} />}
         </div>
     );
 };

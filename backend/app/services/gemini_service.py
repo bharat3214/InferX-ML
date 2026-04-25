@@ -28,6 +28,7 @@ class AIService:
 
         self.client = None
         self.provider = None
+        self.gemini_model = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
 
         if self.groq_key and Groq:
             self.client = Groq(api_key=self.groq_key)
@@ -38,7 +39,7 @@ class AIService:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=self.gemini_key)
-                self.client = genai.GenerativeModel('gemini-2.5-flash')
+                self.client = genai.GenerativeModel(self.gemini_model)
                 self.provider = 'gemini'
                 print("Using Gemini API for AI analysis")
             except Exception as e:
