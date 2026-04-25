@@ -349,68 +349,70 @@ export default function Datasets() {
                         </button>
                     </form>
 
-                    {kaggleLoading || kaggleFetching ? (
-                        <div className="ds-loading">
-                            <Loader2 size={28} className="spin" />
-                            <p>Searching datasets…</p>
-                        </div>
-                    ) : kaggleSearchTerm && kaggleResults.length === 0 ? (
-                        <div className="ds-empty">
-                            <Search size={40} />
-                            <h3>No results</h3>
-                            <p>Try a different search term.</p>
-                        </div>
-                    ) : kaggleResults.length > 0 ? (
-                        <div className="ds-kaggle-grid">
-                            {kaggleResults.map((ds) => (
-                                <div key={ds.ref} className="ds-kaggle-card">
-                                    <div className="ds-kaggle-card-body">
-                                        <h3 className="ds-kaggle-title">{ds.title}</h3>
-                                        {ds.subtitle && <p className="ds-kaggle-sub">{ds.subtitle}</p>}
-                                        <div className="ds-kaggle-meta">
-                                            <span>{formatFileSize(ds.totalBytes)}</span>
-                                            <span>{(ds.downloadCount || 0).toLocaleString()} downloads</span>
-                                            <span>★ {ds.usabilityRating}</span>
+                    <div className="ds-search-results-area">
+                        {kaggleLoading || kaggleFetching ? (
+                            <div className="ds-loading">
+                                <Loader2 size={28} className="spin" />
+                                <p>Searching datasets…</p>
+                            </div>
+                        ) : kaggleSearchTerm && kaggleResults.length === 0 ? (
+                            <div className="ds-empty">
+                                <Search size={40} />
+                                <h3>No results</h3>
+                                <p>Try a different search term.</p>
+                            </div>
+                        ) : kaggleResults.length > 0 ? (
+                            <div className="ds-kaggle-grid">
+                                {kaggleResults.map((ds) => (
+                                    <div key={ds.ref} className="ds-kaggle-card">
+                                        <div className="ds-kaggle-card-body">
+                                            <h3 className="ds-kaggle-title">{ds.title}</h3>
+                                            {ds.subtitle && <p className="ds-kaggle-sub">{ds.subtitle}</p>}
+                                            <div className="ds-kaggle-meta">
+                                                <span>{formatFileSize(ds.totalBytes)}</span>
+                                                <span>{(ds.downloadCount || 0).toLocaleString()} downloads</span>
+                                                <span>★ {ds.usabilityRating}</span>
+                                            </div>
+                                        </div>
+                                        <div className="ds-kaggle-card-actions">
+                                            <a href={ds.url} target="_blank" rel="noopener noreferrer" className="ds-btn ds-btn-ghost">
+                                                <ExternalLink size={14} /> View
+                                            </a>
+                                            <button
+                                                className="ds-btn ds-btn-primary"
+                                                onClick={() => handleSaveKaggle(ds)}
+                                                disabled={savingRef === ds.ref}
+                                            >
+                                                {savingRef === ds.ref
+                                                    ? <><Loader2 size={14} className="spin" /> Saving…</>
+                                                    : <><Download size={14} /> Save to Library</>}
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="ds-kaggle-card-actions">
-                                        <a href={ds.url} target="_blank" rel="noopener noreferrer" className="ds-btn ds-btn-ghost">
-                                            <ExternalLink size={14} /> View
-                                        </a>
-                                        <button
-                                            className="ds-btn ds-btn-primary"
-                                            onClick={() => handleSaveKaggle(ds)}
-                                            disabled={savingRef === ds.ref}
-                                        >
-                                            {savingRef === ds.ref
-                                                ? <><Loader2 size={14} className="spin" /> Saving…</>
-                                                : <><Download size={14} /> Save to Library</>}
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="ds-search-hint">
-                            <Search size={32} />
-                            <p>Search for any dataset and save it directly to your library.</p>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="ds-search-hint">
+                                <Search size={32} />
+                                <p>Search for any dataset and save it directly to your library.</p>
 
-                            <div className="ds-categories-section">
-                                <span className="ds-categories-title">Quick Discovery</span>
-                                <div className="ds-categories-grid">
-                                    {KAG_CATEGORIES.map(cat => (
-                                        <div
-                                            key={cat}
-                                            className="ds-category-chip"
-                                            onClick={() => handleCategoryClick(cat)}
-                                        >
-                                            {cat}
-                                        </div>
-                                    ))}
+                                <div className="ds-categories-section">
+                                    <span className="ds-categories-title">Quick Discovery</span>
+                                    <div className="ds-categories-grid">
+                                        {KAG_CATEGORIES.map(cat => (
+                                            <div
+                                                key={cat}
+                                                className="ds-category-chip"
+                                                onClick={() => handleCategoryClick(cat)}
+                                            >
+                                                {cat}
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </section>
             )}
 
