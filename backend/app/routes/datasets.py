@@ -6,12 +6,73 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 from app import db
 from app.models.dataset import Dataset
+from app.models.experiment import Experiment, TrainingJob
 import io
 import requests as http_requests
 
 datasets_bp = Blueprint('datasets', __name__)
 
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'jpg', 'jpeg', 'png', 'zip'}
+
+
+def _normalize_minio_object_path(object_path, bucket):
+    """Return an object path relative to the bucket."""
+    if not object_path:
+        return None
+
+    normalized = object_path.strip().lstrip('/')
+    bucket_prefix = f'{bucket}/'
+    if normalized.startswith(bucket_prefix):
+        normalized = normalized[len(bucket_prefix):]
+
+    return normalized or None
+
+
+def _collect_model_artifacts(experiment):
+    """Collect model storage references before the experiment is deleted."""
+    results = experiment.results or {}
+    objects = set()
+
+    for object_path in (results.get('model_package_path'), experiment.best_model_id):
+        normalized = _normalize_minio_object_path(object_path, 'models')
+        if normalized:
+            objects.add(normalized)
+
+    return {
+        'prefix': f'user_{experiment.user_id}/experiment_{experiment.id}/',
+        'objects': objects
+    }
+
+
+def _cleanup_model_artifacts(artifact_refs):
+    """Best-effort cleanup for model files in MinIO."""
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+
+        prefix = artifact_refs.get('prefix')
+        if prefix:
+            minio_service.delete_objects('models', prefix)
+
+        for object_name in artifact_refs.get('objects', set()):
+            if prefix and object_name.startswith(prefix):
+                continue
+            minio_service.delete_object('models', object_name)
+    except Exception as e:
+        print(f"Model MinIO cleanup failed: {e}", flush=True)
+
+
+def _cleanup_dataset_object(object_name):
+    """Best-effort cleanup for a dataset file in MinIO."""
+    if not object_name:
+        return
+
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        minio_service.delete_object('datasets', object_name)
+    except Exception as e:
+        print(f"Dataset MinIO cleanup failed: {e}", flush=True)
 
 # ── Public download URLs for sample datasets ──
 # These are free, auth-free CSV links (GitHub raw, UCI, etc.)
@@ -364,18 +425,41 @@ def get_dataset_profile(dataset_id):
 @datasets_bp.route('/<int:dataset_id>', methods=['DELETE'])
 @jwt_required()
 def delete_dataset(dataset_id):
-    """Delete a dataset"""
+    """Delete a dataset and related experiments"""
     user_id = int(get_jwt_identity())
     dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
-    
+
     if not dataset:
         return jsonify({'error': 'Dataset not found'}), 404
-    
-    # TODO: Delete from MinIO
-    
-    db.session.delete(dataset)
-    db.session.commit()
-    
+
+    dataset_object = None
+    if dataset.file_path and not dataset.file_path.startswith('local/'):
+        shared_dataset = Dataset.query.filter(
+            Dataset.id != dataset.id,
+            Dataset.file_path == dataset.file_path
+        ).first()
+        if not shared_dataset:
+            dataset_object = _normalize_minio_object_path(dataset.file_path, 'datasets')
+
+    experiments = Experiment.query.filter_by(dataset_id=dataset.id, user_id=user_id).all()
+    model_artifacts = [_collect_model_artifacts(experiment) for experiment in experiments]
+
+    try:
+        for experiment in experiments:
+            TrainingJob.query.filter_by(experiment_id=experiment.id).delete(synchronize_session=False)
+            db.session.delete(experiment)
+
+        db.session.delete(dataset)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting dataset {dataset_id}: {e}", flush=True)
+        return jsonify({'error': f'Failed to delete dataset: {str(e)}'}), 500
+
+    for artifact_refs in model_artifacts:
+        _cleanup_model_artifacts(artifact_refs)
+    _cleanup_dataset_object(dataset_object)
+
     return jsonify({'message': 'Dataset deleted successfully'}), 200
 
 

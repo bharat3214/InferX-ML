@@ -4,9 +4,56 @@ Models Routes
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-from app.models.experiment import Experiment
+from app.models.experiment import Experiment, TrainingJob
 
 models_bp = Blueprint('models', __name__)
+
+
+def _normalize_minio_object_path(object_path, bucket):
+    """Return an object path relative to the bucket."""
+    if not object_path:
+        return None
+
+    normalized = object_path.strip().lstrip('/')
+    bucket_prefix = f'{bucket}/'
+    if normalized.startswith(bucket_prefix):
+        normalized = normalized[len(bucket_prefix):]
+
+    return normalized or None
+
+
+def _collect_model_artifacts(experiment):
+    """Collect model storage references before the experiment is deleted."""
+    results = experiment.results or {}
+    objects = set()
+
+    for object_path in (results.get('model_package_path'), experiment.best_model_id):
+        normalized = _normalize_minio_object_path(object_path, 'models')
+        if normalized:
+            objects.add(normalized)
+
+    return {
+        'prefix': f'user_{experiment.user_id}/experiment_{experiment.id}/',
+        'objects': objects
+    }
+
+
+def _cleanup_model_artifacts(artifact_refs):
+    """Best-effort cleanup for model files in MinIO."""
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+
+        prefix = artifact_refs.get('prefix')
+        if prefix:
+            minio_service.delete_objects('models', prefix)
+
+        for object_name in artifact_refs.get('objects', set()):
+            if prefix and object_name.startswith(prefix):
+                continue
+            minio_service.delete_object('models', object_name)
+    except Exception as e:
+        print(f"Model MinIO cleanup failed: {e}", flush=True)
 
 
 @models_bp.route('', methods=['GET'])
@@ -201,28 +248,24 @@ def get_model_graphs(model_id):
 @jwt_required()
 def delete_model(model_id):
     """Delete a model and all related records"""
-    from app.models.order import Order
-    from app.models.experiment import TrainingJob
-    
     user_id = int(get_jwt_identity())
-    
+
     experiment = Experiment.query.filter_by(id=model_id, user_id=user_id).first()
     if not experiment:
         return jsonify({'error': 'Model not found'}), 404
-    
+
+    artifact_refs = _collect_model_artifacts(experiment)
+
     try:
-        # Delete related orders first (foreign key constraint)
-        Order.query.filter_by(experiment_id=model_id).delete()
-        
         # Delete related training jobs
-        TrainingJob.query.filter_by(experiment_id=model_id).delete()
-        
-        # TODO: Delete model files from MinIO
-        
+        TrainingJob.query.filter_by(experiment_id=model_id).delete(synchronize_session=False)
+
         # Now delete the experiment
         db.session.delete(experiment)
         db.session.commit()
-        
+
+        _cleanup_model_artifacts(artifact_refs)
+
         return jsonify({'message': 'Model deleted successfully'}), 200
     except Exception as e:
         db.session.rollback()
