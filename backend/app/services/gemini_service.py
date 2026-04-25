@@ -4,6 +4,8 @@ Integrates with Groq API for intelligent dataset analysis and report generation
 """
 import os
 import json
+import time
+import logging
 from typing import Dict, Any, List, Optional
 
 try:
@@ -48,30 +50,90 @@ class AIService:
         if not self.client:
             raise ValueError("No AI API key configured. Set GROQ_API_KEY or GEMINI_API_KEY")
 
-    def _call_llm(self, system_prompt: str, user_message: str) -> str:
+    def call_llm(self, system_prompt: str, user_message: str) -> str:
         """Call the LLM (Groq or Gemini) and return the response text"""
+        
+        # Rate limit handling configuration
+        max_retries = 3
+        retry_delay = 10  # Seconds to wait on 429/quota error
+        
+        for attempt in range(max_retries):
+            # 1. Attempt Groq if it's the provider
+            if self.provider == 'groq':
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message}
+                        ],
+                        temperature=0.3,
+                        max_tokens=4000
+                    )
+                    return response.choices[0].message.content
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    # If Groq hits a rate limit, fallback to Gemini IMMEDIATELY if available
+                    if ('429' in error_msg or 'rate_limit' in error_msg) and self.gemini_key:
+                        print(f"⚠️ Groq rate limit hit. Automatically switching to Gemini...", flush=True)
+                        try:
+                            import google.generativeai as genai
+                            genai.configure(api_key=self.gemini_key)
+                            self.client = genai.GenerativeModel(self.gemini_model)
+                            self.provider = 'gemini'
+                            # Fall through to the next block (Gemini) in the same attempt
+                        except Exception as init_err:
+                            print(f"Failed to initialize Gemini fallback: {init_err}")
+                            raise e
+                    else:
+                        raise e
 
-        if self.provider == 'groq':
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.3,
-                max_tokens=4000
-            )
-            return response.choices[0].message.content
+            # 2. Attempt Gemini if it's the provider
+            if self.provider == 'gemini':
+                try:
+                    response = self.client.generate_content([
+                        {"role": "user", "parts": [system_prompt]},
+                        {"role": "model", "parts": ["I understand. I will respond with valid JSON only."]},
+                        {"role": "user", "parts": [user_message]}
+                    ])
+                    
+                    # Robustly get text from Gemini response
+                    # response.text can fail if the response is complex (multi-part) or blocked by safety filters
+                    try:
+                        if response.text:
+                            return response.text
+                    except (ValueError, AttributeError):
+                        # Attempt manual extraction from candidates
+                        if hasattr(response, 'candidates') and response.candidates:
+                            candidate = response.candidates[0]
+                            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                                parts = [p.text for p in candidate.content.parts if hasattr(p, 'text')]
+                                if parts:
+                                    return "".join(parts)
+                        
+                        # Check if it was blocked
+                        if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                            print(f"🚫 Gemini response blocked: {response.prompt_feedback}", flush=True)
+                        
+                        # Check if candidates were blocked
+                        if hasattr(response, 'candidates') and response.candidates:
+                            finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN')
+                            if finish_reason != 1: # 1 is STOP/SUCCESS in some versions
+                                print(f"⚠️ Gemini Finish Reason: {finish_reason}", flush=True)
+                                
+                        raise ValueError("Gemini returned an empty or complex response that couldn't be parsed as text.")
+                        
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    # Handle Gemini 429 (Quota Exceeded)
+                    if '429' in error_msg or 'quota' in error_msg:
+                        if attempt < max_retries - 1:
+                            print(f"⏳ Gemini quota limit (429) hit. Retrying in {retry_delay}s (Attempt {attempt+1}/{max_retries})...", flush=True)
+                            time.sleep(retry_delay)
+                            continue
+                    raise e
 
-        elif self.provider == 'gemini':
-            response = self.client.generate_content([
-                {"role": "user", "parts": [system_prompt]},
-                {"role": "model", "parts": ["I understand. I will respond with valid JSON only."]},
-                {"role": "user", "parts": [user_message]}
-            ])
-            return response.text
-
-        raise ValueError("No AI provider configured")
+        raise ValueError(f"AI API calls to {self.provider} failed after {max_retries} attempts.")
 
     def analyze_dataset_with_prompt(
         self,
@@ -131,7 +193,7 @@ Based on the user's goal and the dataset structure, determine:
 Respond with JSON only."""
 
         try:
-            response_text = self._call_llm(system_prompt, user_message)
+            response_text = self.call_llm(system_prompt, user_message)
 
             # Clean up response if it has markdown code blocks
             response_text = response_text.strip()

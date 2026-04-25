@@ -7,76 +7,23 @@ import json
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Any
+from .gemini_service import get_ai_service
 
 
 class AIInsightGenerator:
-    """Generates dynamic, dataset-specific insights using Gemini AI"""
+    """Generates dynamic, dataset-specific insights using AIService"""
     
     def __init__(self):
-        self.gemini_key = os.getenv('GEMINI_API_KEY')
-        self.groq_key = os.getenv('GROQ_API_KEY')
-        self.gemini_model = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
-        self.groq_model = 'llama-3.1-8b-instant' # Updated Llama 3.1 on Groq
+        self.ai_service = get_ai_service()
     
     def _call_ai(self, prompt: str, max_tokens: int = 200) -> str:
-        """Central AI call with Gemini primary and Groq fallback"""
-        # 1. Try Gemini
-        response = self._call_gemini(prompt, max_tokens)
-        if response:
-            return response
-            
-        # 2. Fallback to Groq if key exists
-        if self.groq_key:
-            return self._call_groq(prompt, max_tokens)
-            
-        return None
-
-    def _call_gemini(self, prompt: str, max_tokens: int = 200) -> str:
-        """Call Gemini API"""
-        if not self.gemini_key:
-            return None
-            
+        """Central AI call using the hardened AIService"""
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.gemini_key)
-            model = genai.GenerativeModel(self.gemini_model)
-            
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens,
-                    temperature=0.7,
-                )
-            )
-            return response.text.strip()
+            # We use a generic system prompt for insights
+            system_prompt = "You are a helpful data science assistant that provides concise insights."
+            return self.ai_service.call_llm(system_prompt, prompt)
         except Exception as e:
-            print(f"⚠️ Gemini API error: {e}", flush=True)
-            return None
-
-    def _call_groq(self, prompt: str, max_tokens: int = 200) -> str:
-        """Call Groq API as a fallback"""
-        if not self.groq_key:
-            return None
-            
-        try:
-            from groq import Groq
-            client = Groq(api_key=self.groq_key)
-            
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model=self.groq_model,
-                max_tokens=max_tokens,
-                temperature=0.7,
-            )
-            
-            return chat_completion.choices[0].message.content.strip()
-        except Exception as e:
-            print(f"⚠️ Groq API error: {e}", flush=True)
+            print(f"⚠️ AIInsightGenerator error: {e}", flush=True)
             return None
     
     def analyze_dataset(self, df: pd.DataFrame, target_column: str, goal_description: str = "") -> List[str]:

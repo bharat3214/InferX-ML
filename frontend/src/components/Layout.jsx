@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
+import TrainingMonitor from './TrainingMonitor'
 import './Layout.css'
 
 const navItems = [
@@ -95,6 +96,9 @@ export default function Layout({ children }) {
             <main className={`main-content ${getPageClass()}`}>
                 {children}
             </main>
+
+            {/* Global Background Monitors */}
+            <TrainingMonitor />
         </div>
     )
 }

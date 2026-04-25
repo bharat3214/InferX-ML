@@ -19,10 +19,12 @@ import {
     ImageIcon,
     Settings,
     Download,
-    TableProperties
+    TableProperties,
+    RotateCcw
 } from 'lucide-react'
 import { datasetsApi, trainingApi, modelsApi } from '../services/api'
 import LearningTimeline from '../components/LearningTimeline'
+import { useTrainingStore } from '../store/trainingStore'
 import './Training.css'
 
 export default function Training() {
@@ -30,29 +32,31 @@ export default function Training() {
     const [searchParams] = useSearchParams()
     const preselectedDataset = searchParams.get('dataset')
 
-    const [selectedDataset, setSelectedDataset] = useState(preselectedDataset || '')
-    const [targetColumn, setTargetColumn] = useState('')
-    const [experimentName, setExperimentName] = useState('')
-    const [goalDescription, setGoalDescription] = useState('')
-    const [isTraining, setIsTraining] = useState(false)
-    const [currentJob, setCurrentJob] = useState(null)
+    const {
+        currentJob, isTraining, setCurrentJob, setIsTraining,
+        lastStatus, setLastStatus,
+        experimentName, setExperimentName,
+        selectedDataset, setSelectedDataset,
+        targetColumn, setTargetColumn,
+        goalDescription, setGoalDescription,
+        configData, setConfigData,
+        imageProblemType, setImageProblemType,
+        aiPrompt, setAiPrompt,
+        resetTraining
+    } = useTrainingStore()
+
+    useEffect(() => {
+        if (preselectedDataset && preselectedDataset !== selectedDataset) {
+            setSelectedDataset(preselectedDataset)
+        }
+    }, [preselectedDataset, selectedDataset, setSelectedDataset])
+
     const logsEndRef = useRef(null)
 
     // Advanced Configuration State
     const [showAdvanced, setShowAdvanced] = useState(false)
-    const [configData, setConfigData] = useState({
-        epochs: '',
-        batch_size: '',
-        learning_rate: '',
-        n_estimators: '',
-        max_depth: '',
-        img_size: ''
-    })
-
-    const [imageProblemType, setImageProblemType] = useState('image_classification')
 
     // AI Prompt Analysis State
-    const [aiPrompt, setAiPrompt] = useState('')
     const [aiAnalysis, setAiAnalysis] = useState(null)
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [analysisError, setAnalysisError] = useState(null)
@@ -110,6 +114,14 @@ export default function Training() {
         enabled: !!currentJob,
         refetchInterval: isTraining ? 2000 : false
     })
+    const cachedStatus = lastStatus?.experiment?.id === currentJob?.id ? lastStatus : null
+    const latestTrainingData = statusData?.data || cachedStatus
+
+    useEffect(() => {
+        if (statusData?.data) {
+            setLastStatus(statusData.data)
+        }
+    }, [statusData, setLastStatus])
 
     // Polling for logs
     const { data: logsData, refetch: refetchLogs } = useQuery({
@@ -130,13 +142,13 @@ export default function Training() {
     const thinkingMessages = thinkingData?.data?.thinking_logs || []
 
     // Get explanation data from status response
-    const explanationData = statusData?.data?.experiment?.explanation_data || null
+    const explanationData = latestTrainingData?.experiment?.explanation_data || null
 
     // Fetch graphs if training completed
     const { data: graphsData } = useQuery({
         queryKey: ['model-graphs', currentJob?.id],
         queryFn: () => modelsApi.getGraphs(currentJob.id),
-        enabled: !!currentJob && statusData?.data?.experiment?.status === 'completed',
+        enabled: !!currentJob && latestTrainingData?.experiment?.status === 'completed',
         retry: 1
     })
     const graphs = graphsData?.data?.graphs || {}
@@ -149,6 +161,7 @@ export default function Training() {
         },
         onSuccess: (response) => {
             setCurrentJob(response.data.experiment)
+            setLastStatus({ experiment: response.data.experiment, jobs: [] })
             setIsTraining(true)
         },
         onError: (error) => {
@@ -225,7 +238,7 @@ export default function Training() {
 
     // Check for completion after one final refresh so the UI receives 100% progress.
     useEffect(() => {
-        const status = statusData?.data?.experiment?.status
+        const status = latestTrainingData?.experiment?.status
         const isTerminal = ['completed', 'failed', 'cancelled'].includes(status)
 
         if (!isTraining || !isTerminal) return
@@ -249,7 +262,7 @@ export default function Training() {
         return () => {
             isCurrent = false
         }
-    }, [isTraining, statusData?.data?.experiment?.status, refetchStatus, refetchLogs, refetchThinking])
+    }, [isTraining, latestTrainingData?.experiment?.status, refetchStatus, refetchLogs, refetchThinking, setIsTraining])
 
     // AI Prompt Analysis Handler
     const handleAnalyzeWithAI = async () => {
@@ -334,7 +347,7 @@ export default function Training() {
     ).join('\n')
 
     // Extract trained jobs for Leaderboard
-    const trainedJobs = statusData?.data?.jobs || []
+    const trainedJobs = latestTrainingData?.jobs || []
     // Sort jobs by score descendant (accuracy or r2_score)
     const sortedJobs = [...trainedJobs].sort((a, b) => {
         const scoreA = a.metrics?.accuracy || a.metrics?.r2_score || 0
@@ -355,7 +368,7 @@ export default function Training() {
         let logContent = `INFERX-ML TRAINING LOG\n`;
         logContent += `======================\n`;
         logContent += `Experiment: ${currentJob.name}\n`;
-        logContent += `Status: ${statusData?.data?.experiment?.status || 'Unknown'}\n`;
+        logContent += `Status: ${latestTrainingData?.experiment?.status || 'Unknown'}\n`;
         logContent += `Timestamp: ${new Date().toLocaleString()}\n\n`;
 
         logContent += `DEVELOPER LOGS\n`;
@@ -393,7 +406,7 @@ export default function Training() {
         URL.revokeObjectURL(url);
     };
 
-    const experimentStatus = statusData?.data?.experiment?.status
+    const experimentStatus = latestTrainingData?.experiment?.status
 
     return (
         <div className="training-page">
@@ -403,23 +416,35 @@ export default function Training() {
                     <Cpu size={20} className="header-icon" />
                     <h1>Model Training</h1>
                 </div>
-                <button
-                    className="btn btn-primary start-btn"
-                    onClick={handleStartTraining}
-                    disabled={!experimentName.trim() || !selectedDataset || needsHeaderFix || isDetectingHeaders || (isTraining && experimentStatus !== 'completed')}
-                >
-                    {isTraining ? (
-                        <>
-                            <div className="spinner" style={{ width: 16, height: 16 }}></div>
-                            Training...
-                        </>
-                    ) : (
-                        <>
-                            <Play size={16} />
-                            {experimentStatus === 'completed' ? 'New Training' : 'Start Training'}
-                        </>
-                    )}
-                </button>
+                <div className="header-actions" style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button
+                        className="btn btn-outline"
+                        onClick={resetTraining}
+                        disabled={isTraining}
+                        title="Reset all settings to start a new training"
+                        style={{ padding: '0.5rem 1rem' }}
+                    >
+                        <RotateCcw size={16} />
+                        Reset
+                    </button>
+                    <button
+                        className="btn btn-primary start-btn"
+                        onClick={handleStartTraining}
+                        disabled={!experimentName.trim() || !selectedDataset || needsHeaderFix || isDetectingHeaders || (isTraining && experimentStatus !== 'completed')}
+                    >
+                        {isTraining ? (
+                            <>
+                                <div className="spinner" style={{ width: 16, height: 16 }}></div>
+                                Training...
+                            </>
+                        ) : (
+                            <>
+                                <Play size={16} />
+                                {experimentStatus === 'completed' ? 'New Training' : 'Start Training'}
+                            </>
+                        )}
+                    </button>
+                </div>
             </div>
 
             {/* ── Two-Column Layout ── */}
@@ -937,16 +962,16 @@ export default function Training() {
                                     <div className="success-message">
                                         <CheckCircle size={20} className="text-success" />
                                         <h3>Training Complete!</h3>
-                                        {statusData.data.experiment.best_model_name && (
+                                        {latestTrainingData?.experiment?.best_model_name && (
                                             <div className="result-summary">
                                                 <div className="result-item">
                                                     <span className="result-label">🏆 Best Model</span>
-                                                    <span className="result-value">{statusData.data.experiment.best_model_name}</span>
+                                                    <span className="result-value">{latestTrainingData.experiment.best_model_name}</span>
                                                 </div>
                                                 <div className="result-item">
                                                     <span className="result-label">📊 Score</span>
                                                     <span className="result-value">
-                                                        {(statusData.data.experiment.best_score * 100).toFixed(2)}%
+                                                        {(latestTrainingData.experiment.best_score * 100).toFixed(2)}%
                                                     </span>
                                                 </div>
                                             </div>
