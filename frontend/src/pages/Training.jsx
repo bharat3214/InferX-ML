@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
     Cpu,
@@ -18,13 +18,15 @@ import {
     Terminal,
     ImageIcon,
     Settings,
-    Download
+    Download,
+    TableProperties
 } from 'lucide-react'
 import { datasetsApi, trainingApi, modelsApi } from '../services/api'
 import LearningTimeline from '../components/LearningTimeline'
 import './Training.css'
 
 export default function Training() {
+    const queryClient = useQueryClient()
     const [searchParams] = useSearchParams()
     const preselectedDataset = searchParams.get('dataset')
 
@@ -59,6 +61,9 @@ export default function Training() {
     const [imbalanceDetected, setImbalanceDetected] = useState(false)
     const [autoBalance, setAutoBalance] = useState(false)
     const [isEnsembling, setIsEnsembling] = useState(false)
+    const [headerInputs, setHeaderInputs] = useState([])
+    const [headerFixError, setHeaderFixError] = useState(null)
+    const [trainingStartError, setTrainingStartError] = useState(null)
 
     const { data: datasetsData } = useQuery({
         queryKey: ['datasets'],
@@ -74,6 +79,18 @@ export default function Training() {
         enabled: !!selectedDataset
     })
 
+    const {
+        data: headerDetectionData,
+        isFetching: isDetectingHeaders,
+        refetch: refetchHeaderDetection
+    } = useQuery({
+        queryKey: ['dataset-header-detection', selectedDataset],
+        queryFn: () => datasetsApi.detectHeaders(selectedDataset),
+        enabled: !!selectedDataset && !!selectedDatasetInfo && selectedDatasetInfo.data_type !== 'image',
+        refetchOnMount: 'always',
+        retry: 1
+    })
+
     const columns = profileData?.data?.column_info
         ? Object.keys(profileData.data.column_info)
         : []
@@ -83,6 +100,8 @@ export default function Training() {
     const imageClasses = isImageDataset && selectedDatasetInfo?.column_info
         ? selectedDatasetInfo.column_info
         : null
+    const headerDetection = headerDetectionData?.data
+    const needsHeaderFix = !!selectedDataset && !isImageDataset && headerDetection?.has_headers === false
 
     // Polling for status
     const { data: statusData, refetch: refetchStatus } = useQuery({
@@ -125,9 +144,20 @@ export default function Training() {
 
     const startTrainingMutation = useMutation({
         mutationFn: (data) => trainingApi.start(data),
+        onMutate: () => {
+            setTrainingStartError(null)
+        },
         onSuccess: (response) => {
             setCurrentJob(response.data.experiment)
             setIsTraining(true)
+        },
+        onError: (error) => {
+            const data = error.response?.data || {}
+            setTrainingStartError({
+                message: data.error || 'Training could not be started',
+                suggestion: data.suggestion || data.hint || null,
+                availableColumns: data.available_columns || null
+            })
         }
     })
 
@@ -142,10 +172,55 @@ export default function Training() {
         }
     })
 
+    const setHeadersMutation = useMutation({
+        mutationFn: (headers) => datasetsApi.setHeaders(selectedDataset, headers),
+        onSuccess: async () => {
+            setHeaderFixError(null)
+            await Promise.allSettled([
+                queryClient.invalidateQueries({ queryKey: ['datasets'] }),
+                queryClient.invalidateQueries({ queryKey: ['dataset-profile', selectedDataset] }),
+                queryClient.invalidateQueries({ queryKey: ['dataset-header-detection', selectedDataset] })
+            ])
+            await Promise.allSettled([
+                refetchHeaderDetection(),
+                queryClient.refetchQueries({ queryKey: ['dataset-profile', selectedDataset] })
+            ])
+        },
+        onError: (error) => {
+            setHeaderFixError(error.response?.data?.error || 'Failed to update dataset headers')
+        }
+    })
+
     const handleCombineTop3 = () => {
         if (!currentJob?.id) return
         setIsEnsembling(true)
         ensembleMutation.mutate(currentJob.id)
+    }
+
+    useEffect(() => {
+        setHeaderFixError(null)
+        setHeaderInputs([])
+        setTargetColumn('')
+        setTrainingStartError(null)
+    }, [selectedDataset])
+
+    useEffect(() => {
+        if (headerDetection?.has_headers === false) {
+            setHeaderInputs(headerDetection.suggested_headers || [])
+        }
+    }, [selectedDataset, headerDetection?.has_headers, headerDetection?.suggested_headers])
+
+    const handleHeaderInputChange = (index, value) => {
+        setHeaderInputs((current) => current.map((header, i) => (i === index ? value : header)))
+    }
+
+    const handleConfirmHeaders = () => {
+        const cleanHeaders = headerInputs.map((header) => header.trim())
+        if (!cleanHeaders.length || cleanHeaders.some((header) => !header)) {
+            setHeaderFixError('Every column needs a header before continuing')
+            return
+        }
+        setHeadersMutation.mutate(cleanHeaders)
     }
 
     // Check for completion after one final refresh so the UI receives 100% progress.
@@ -233,7 +308,7 @@ export default function Training() {
     }, [targetColumn, profileData])
 
     const handleStartTraining = () => {
-        if (!selectedDataset || !experimentName.trim()) return
+        if (!selectedDataset || !experimentName.trim() || needsHeaderFix) return
 
         // Filter out empty config values natively instead of sending nulls to backend
         const cleanConfig = {}
@@ -331,7 +406,7 @@ export default function Training() {
                 <button
                     className="btn btn-primary start-btn"
                     onClick={handleStartTraining}
-                    disabled={!experimentName.trim() || !selectedDataset || (isTraining && experimentStatus !== 'completed')}
+                    disabled={!experimentName.trim() || !selectedDataset || needsHeaderFix || isDetectingHeaders || (isTraining && experimentStatus !== 'completed')}
                 >
                     {isTraining ? (
                         <>
@@ -356,6 +431,25 @@ export default function Training() {
                         <Zap size={16} />
                         <span>Configuration</span>
                     </div>
+
+                    {trainingStartError && (
+                        <div className="training-start-error">
+                            <div className="training-start-error-title">
+                                <AlertCircle size={15} />
+                                <span>{trainingStartError.message}</span>
+                            </div>
+                            {trainingStartError.suggestion && (
+                                <p>{trainingStartError.suggestion}</p>
+                            )}
+                            {trainingStartError.availableColumns?.length > 0 && (
+                                <div className="training-start-columns">
+                                    {trainingStartError.availableColumns.map((column) => (
+                                        <span key={column}>{column}</span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* 1. Experiment Name (Required) */}
                     <div className="form-group">
@@ -450,7 +544,86 @@ export default function Training() {
                     {/* ── Tabular Dataset Config ── */}
                     {!isImageDataset && (
                         <>
-                            <div className={`ai-section ${!selectedDataset ? 'section-disabled' : ''}`}>
+                            {selectedDataset && (
+                                <div className={`header-fix-panel ${needsHeaderFix ? 'needs-review' : ''}`}>
+                                    <div className="header-fix-title">
+                                        <TableProperties size={15} />
+                                        <span>Dataset Headers</span>
+                                    </div>
+
+                                    {isDetectingHeaders && (
+                                        <div className="header-fix-status">
+                                            <div className="spinner" style={{ width: 14, height: 14 }}></div>
+                                            <span>Checking column headers...</span>
+                                        </div>
+                                    )}
+
+                                    {!isDetectingHeaders && headerDetection?.has_headers === true && (
+                                        <div className="header-fix-ok">
+                                            <CheckCircle size={14} />
+                                            <span>Headers look ready for training.</span>
+                                        </div>
+                                    )}
+
+                                    {!isDetectingHeaders && needsHeaderFix && (
+                                        <>
+                                            <div className="header-fix-alert">
+                                                <AlertCircle size={15} />
+                                                <span>The first row looks like data, so training is paused until headers are confirmed.</span>
+                                            </div>
+
+                                            <div className="raw-preview">
+                                                {(headerDetection.raw_rows || []).slice(0, 3).map((row, rowIndex) => (
+                                                    <div className="raw-preview-row" key={rowIndex}>
+                                                        {row.map((value, colIndex) => (
+                                                            <span className="raw-preview-cell" key={`${rowIndex}-${colIndex}`}>
+                                                                {String(value ?? '')}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div className="header-input-grid">
+                                                {headerInputs.map((header, index) => (
+                                                    <label className="header-input-item" key={index}>
+                                                        <span>Column {index + 1}</span>
+                                                        <input
+                                                            className="input"
+                                                            value={header}
+                                                            onChange={(e) => handleHeaderInputChange(index, e.target.value)}
+                                                            disabled={setHeadersMutation.isPending || isTraining}
+                                                        />
+                                                    </label>
+                                                ))}
+                                            </div>
+
+                                            {headerFixError && (
+                                                <div className="ai-error">
+                                                    <AlertCircle size={14} />
+                                                    <span>{headerFixError}</span>
+                                                </div>
+                                            )}
+
+                                            <button
+                                                type="button"
+                                                className="btn btn-primary header-confirm-btn"
+                                                onClick={handleConfirmHeaders}
+                                                disabled={setHeadersMutation.isPending || isTraining}
+                                            >
+                                                {setHeadersMutation.isPending ? (
+                                                    <div className="spinner" style={{ width: 14, height: 14 }}></div>
+                                                ) : (
+                                                    <CheckCircle size={14} />
+                                                )}
+                                                {setHeadersMutation.isPending ? 'Saving...' : 'Confirm Headers'}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className={`ai-section ${(!selectedDataset || needsHeaderFix) ? 'section-disabled' : ''}`}>
                                 <label className="label">
                                     <Sparkles size={14} />
                                     AI Goal Analysis
@@ -462,12 +635,12 @@ export default function Training() {
                                         onChange={(e) => setAiPrompt(e.target.value)}
                                         placeholder="e.g., Predict which products need restocking..."
                                         rows={2}
-                                        disabled={!selectedDataset || isTraining || isAnalyzing}
+                                        disabled={!selectedDataset || needsHeaderFix || isTraining || isAnalyzing}
                                     />
                                     <button
                                         className="btn btn-secondary ai-analyze-btn"
                                         onClick={handleAnalyzeWithAI}
-                                        disabled={!selectedDataset || !aiPrompt.trim() || isAnalyzing || isTraining}
+                                        disabled={!selectedDataset || needsHeaderFix || !aiPrompt.trim() || isAnalyzing || isTraining}
                                     >
                                         {isAnalyzing ? (
                                             <div className="spinner" style={{ width: 14, height: 14 }}></div>
@@ -537,7 +710,7 @@ export default function Training() {
                                     className="input"
                                     value={targetColumn}
                                     onChange={(e) => setTargetColumn(e.target.value)}
-                                    disabled={!selectedDataset || isTraining}
+                                    disabled={!selectedDataset || needsHeaderFix || isTraining}
                                 >
                                     <option value="">{selectedDataset ? 'None (auto-detect or unsupervised)' : 'Select a dataset first...'}</option>
                                     {columns.map((col) => (

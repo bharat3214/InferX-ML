@@ -8,6 +8,8 @@ from app import db
 from app.models.dataset import Dataset
 from app.models.experiment import Experiment, TrainingJob
 import io
+import json
+import re
 import requests as http_requests
 
 datasets_bp = Blueprint('datasets', __name__)
@@ -73,6 +75,210 @@ def _cleanup_dataset_object(object_name):
         minio_service.delete_object('datasets', object_name)
     except Exception as e:
         print(f"Dataset MinIO cleanup failed: {e}", flush=True)
+
+
+def _is_numeric_like(value):
+    """Return True when a value looks like raw numeric data instead of a label."""
+    text = str(value).strip()
+    if not text:
+        return False
+    if re.fullmatch(r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?', text):
+        return True
+    parts = re.split(r'\s+', text)
+    return len(parts) > 1 and sum(_is_numeric_like(part) for part in parts) / len(parts) >= 0.8
+
+
+def _snake_case_header(value, fallback):
+    text = str(value or '').strip().lower()
+    text = re.sub(r'[^a-z0-9]+', '_', text).strip('_')
+    text = re.sub(r'_+', '_', text)
+    if not text or text[0].isdigit():
+        text = fallback
+    return text[:64]
+
+
+def _dedupe_headers(headers):
+    seen = {}
+    clean_headers = []
+    for index, header in enumerate(headers):
+        base = _snake_case_header(header, f'col_{index}')
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        clean_headers.append(base if count == 0 else f'{base}_{count}')
+    return clean_headers
+
+
+def _fallback_headers(column_count):
+    return [f'col_{index}' for index in range(column_count)]
+
+
+def _canonical_header_guess(raw_rows, column_count, dataset=None):
+    """Return trusted names for well-known headerless public datasets."""
+    name_parts = [
+        getattr(dataset, 'name', '') or '',
+        getattr(dataset, 'file_path', '') or '',
+        getattr(dataset, 'description', '') or ''
+    ]
+    context = ' '.join(name_parts).lower()
+
+    if column_count == 14 and 'housing' in context and raw_rows:
+        return [
+            'crime_rate',
+            'residential_zone',
+            'industrial_area',
+            'charles_river_boundary',
+            'nitric_oxide_concentration',
+            'average_rooms',
+            'older_home_percentage',
+            'employment_center_distance',
+            'highway_access_index',
+            'property_tax_rate',
+            'pupil_teacher_ratio',
+            'black_population_index',
+            'lower_status_percentage',
+            'median_home_value'
+        ]
+
+    return None
+
+
+def _json_safe_cell(value):
+    if value != value:
+        return None
+    if hasattr(value, 'item'):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if hasattr(value, 'isoformat'):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    return value
+
+
+def _read_tabular_bytes(file_bytes, file_type, header='infer', nrows=None):
+    import pandas as pd
+
+    if file_type in ['xlsx', 'xls']:
+        return pd.read_excel(io.BytesIO(file_bytes), header=header, nrows=nrows)
+
+    kwargs = {'header': header}
+    if nrows is not None:
+        kwargs['nrows'] = nrows
+
+    def _unnamed_ratio(dataframe):
+        columns = [str(col) for col in dataframe.columns]
+        if not columns:
+            return 0
+        return sum(col.startswith('Unnamed:') for col in columns) / len(columns)
+
+    try:
+        df = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine='python', **kwargs)
+    except Exception:
+        df = pd.read_csv(io.BytesIO(file_bytes), **kwargs)
+
+    if len(df.columns) == 1 or _unnamed_ratio(df) >= 0.25:
+        first_line = file_bytes.decode('utf-8', errors='ignore').splitlines()[0:1]
+        if first_line and len(re.split(r'\s+', first_line[0].strip())) > 1:
+            whitespace_df = pd.read_csv(io.BytesIO(file_bytes), sep=r'\s+', engine='python', **kwargs)
+            if len(whitespace_df.columns) >= len(df.columns) or _unnamed_ratio(whitespace_df) < _unnamed_ratio(df):
+                df = whitespace_df
+
+    return df
+
+
+def _download_dataset_bytes(dataset):
+    from app.services.minio_service import get_minio_service
+
+    if dataset.file_path.startswith('local/'):
+        raise ValueError('Local fallback dataset files cannot be repaired from storage')
+
+    minio_service = get_minio_service()
+    object_name = _normalize_minio_object_path(dataset.file_path, 'datasets')
+    file_bytes = minio_service.download_bytes('datasets', object_name)
+    if file_bytes is None:
+        raise ValueError('Failed to download dataset from storage')
+    return file_bytes, object_name, minio_service
+
+
+def _headers_look_missing(headers):
+    if not headers:
+        return False
+    data_like_count = sum(
+        1 for header in headers
+        if _is_numeric_like(header) or str(header).strip().startswith('Unnamed:')
+    )
+    return data_like_count / len(headers) >= 0.8
+
+
+def _headers_are_too_generic(headers):
+    generic_patterns = (
+        r'^col_?\d+$',
+        r'^column_?\d+$',
+        r'^field_?\d+$',
+        r'^feature_?\d+$',
+        r'^value_?\d+$'
+    )
+    generic_count = 0
+    for header in headers:
+        text = str(header).strip().lower()
+        if any(re.fullmatch(pattern, text) for pattern in generic_patterns):
+            generic_count += 1
+    return headers and generic_count / len(headers) > 0.5
+
+
+def _suggest_headers_with_ai(raw_rows, column_count, dataset=None):
+    canonical = _canonical_header_guess(raw_rows, column_count, dataset)
+    if canonical:
+        return canonical
+
+    fallback = _fallback_headers(column_count)
+    try:
+        from app.services.gemini_service import get_ai_service
+
+        dataset_context = {
+            'dataset_name': getattr(dataset, 'name', None),
+            'description': getattr(dataset, 'description', None),
+            'file_path': getattr(dataset, 'file_path', None),
+            'column_count': column_count
+        }
+        system_prompt = (
+            "You are a senior data scientist and data dictionary author. Infer "
+            "professional, domain-specific snake_case column headers for a "
+            "headerless dataset. Prefer real semantic names over generic names. "
+            "If the sample resembles a known public dataset, use the accepted "
+            "canonical feature names. Respond with valid JSON only, no markdown."
+        )
+        user_message = (
+            "Return exactly this JSON shape: "
+            '{"headers":["descriptive_name_1","descriptive_name_2"]}\n'
+            f"Dataset context: {json.dumps(dataset_context, default=str)}\n"
+            f"First rows: {json.dumps(raw_rows[:5], default=str)}\n"
+            "Rules:\n"
+            f"- Return exactly {column_count} headers in the same column order.\n"
+            "- Use concise snake_case names.\n"
+            "- Do not use generic names like column_1, col_0, field_1, value_1, "
+            "feature_1 unless there is truly no evidence.\n"
+            "- Include units or meaning when inferable, such as rate, percentage, "
+            "count, score, value, date, id.\n"
+            "- No duplicates, spaces, punctuation, explanations, or markdown."
+        )
+        response_text = get_ai_service()._call_llm(system_prompt, user_message).strip()
+        if response_text.startswith('```'):
+            response_text = "\n".join(response_text.splitlines()[1:-1]).strip()
+        parsed = json.loads(response_text)
+        headers = parsed.get('headers') if isinstance(parsed, dict) else parsed
+        if not isinstance(headers, list) or len(headers) != column_count:
+            return fallback
+        headers = _dedupe_headers(headers)
+        if _headers_are_too_generic(headers):
+            return fallback
+        return headers
+    except Exception as e:
+        print(f"AI header suggestion failed: {e}", flush=True)
+        return fallback
 
 # ── Public download URLs for sample datasets ──
 # These are free, auth-free CSV links (GitHub raw, UCI, etc.)
@@ -420,6 +626,119 @@ def get_dataset_profile(dataset_id):
         'profile_data': dataset.profile_data,
         'column_info': dataset.column_info
     }), 200
+
+
+@datasets_bp.route('/<int:dataset_id>/detect-headers', methods=['GET'])
+@jwt_required()
+def detect_dataset_headers(dataset_id):
+    """Detect whether a tabular dataset is missing a real header row."""
+    user_id = int(get_jwt_identity())
+    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
+
+    if not dataset:
+        return jsonify({'error': 'Dataset not found'}), 404
+
+    if dataset.file_type not in ['csv', 'xlsx', 'xls']:
+        return jsonify({'error': 'Header detection is only available for tabular datasets'}), 400
+
+    try:
+        file_bytes, _, _ = _download_dataset_bytes(dataset)
+        raw_df = _read_tabular_bytes(file_bytes, dataset.file_type, header=None, nrows=4)
+        current_df = _read_tabular_bytes(file_bytes, dataset.file_type, header='infer', nrows=3)
+
+        raw_rows = [
+            [_json_safe_cell(value) for value in row]
+            for row in raw_df.values.tolist()
+        ]
+        current_headers = [str(col).strip() for col in current_df.columns]
+        column_count = len(raw_df.columns)
+        has_headers = not _headers_look_missing(current_headers)
+        suggested_headers = [] if has_headers else _suggest_headers_with_ai(raw_rows[:3], column_count, dataset)
+
+        return jsonify({
+            'has_headers': has_headers,
+            'raw_rows': raw_rows,
+            'current_headers': current_headers,
+            'column_count': column_count,
+            'suggested_headers': suggested_headers
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to detect headers: {str(e)}'}), 500
+
+
+@datasets_bp.route('/<int:dataset_id>/set-headers', methods=['POST'])
+@jwt_required()
+def set_dataset_headers(dataset_id):
+    """Apply confirmed headers to a stored tabular dataset and refresh metadata."""
+    user_id = int(get_jwt_identity())
+    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
+
+    if not dataset:
+        return jsonify({'error': 'Dataset not found'}), 404
+
+    if dataset.file_type not in ['csv', 'xlsx', 'xls']:
+        return jsonify({'error': 'Headers can only be set for tabular datasets'}), 400
+
+    data = request.get_json(silent=True) or {}
+    requested_headers = data if isinstance(data, list) else data.get('headers')
+    if not isinstance(requested_headers, list) or not requested_headers:
+        return jsonify({'error': 'headers must be a non-empty array'}), 400
+
+    try:
+        file_bytes, object_name, minio_service = _download_dataset_bytes(dataset)
+        df = _read_tabular_bytes(file_bytes, dataset.file_type, header=None)
+
+        if len(requested_headers) != len(df.columns):
+            return jsonify({
+                'error': f'Expected {len(df.columns)} headers, received {len(requested_headers)}'
+            }), 400
+
+        headers = _dedupe_headers(requested_headers)
+        df.columns = headers
+
+        output = io.BytesIO()
+        content_type = 'text/csv'
+        if dataset.file_type in ['xlsx', 'xls']:
+            df.to_excel(output, index=False)
+            content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        else:
+            df.to_csv(output, index=False)
+        output_bytes = output.getvalue()
+
+        uploaded = minio_service.upload_bytes(
+            bucket='datasets',
+            object_name=object_name,
+            data=output_bytes,
+            content_type=content_type
+        )
+        if not uploaded:
+            return jsonify({'error': 'Failed to write updated dataset to storage'}), 500
+
+        dataset.file_size = len(output_bytes)
+        dataset.num_rows = len(df)
+        dataset.num_columns = len(df.columns)
+        dataset.data_type = 'tabular'
+        dataset.column_info = {
+            col: {'dtype': str(df[col].dtype), 'null_count': int(df[col].isnull().sum())}
+            for col in df.columns
+        }
+        dataset.profile_status = 'pending'
+        db.session.commit()
+
+        try:
+            from app.tasks.training_tasks import profile_dataset_task
+            profile_dataset_task.delay(dataset.id)
+        except Exception as e:
+            print(f"Failed to enqueue dataset profiling after header update: {e}", flush=True)
+
+        return jsonify({
+            'message': 'Dataset headers updated successfully',
+            'dataset': dataset.to_dict(),
+            'headers': headers
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to set headers: {str(e)}'}), 500
 
 
 @datasets_bp.route('/<int:dataset_id>', methods=['DELETE'])

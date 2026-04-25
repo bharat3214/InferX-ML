@@ -58,6 +58,8 @@ export const datasetsApi = {
         }),
     delete: (id) => api.delete(`/datasets/${id}`),
     getProfile: (id) => api.get(`/datasets/${id}/profile`),
+    detectHeaders: (id) => api.get(`/datasets/${id}/detect-headers`, { timeout: 45000 }),
+    setHeaders: (id, headers) => api.post(`/datasets/${id}/set-headers`, { headers }, { timeout: 120000 }),
     useSample: (sampleId) => api.post('/datasets/use-sample', { sample_id: sampleId }),
     searchKaggle: (query, page = 1) => api.get('/datasets/kaggle/search', { params: { q: query, page } }),
     downloadKaggle: (ref, name) => api.post('/datasets/kaggle/download', { ref, name }, { timeout: 120000 }),
