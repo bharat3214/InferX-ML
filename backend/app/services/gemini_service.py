@@ -18,16 +18,17 @@ class AIService:
     Used for:
     1. Analyzing datasets with natural language prompts to suggest target columns
     2. Generating order reports based on predictions
+    3. AI-powered synthetic dataset generation
     """
-    
+
     def __init__(self):
         # Try Groq first, then Gemini
         self.groq_key = os.environ.get('GROQ_API_KEY')
         self.gemini_key = os.environ.get('GEMINI_API_KEY')
-        
+
         self.client = None
         self.provider = None
-        
+
         if self.groq_key and Groq:
             self.client = Groq(api_key=self.groq_key)
             self.provider = 'groq'
@@ -42,13 +43,13 @@ class AIService:
                 print("Using Gemini API for AI analysis")
             except Exception as e:
                 print(f"Failed to initialize Gemini: {e}")
-        
+
         if not self.client:
             raise ValueError("No AI API key configured. Set GROQ_API_KEY or GEMINI_API_KEY")
-    
+
     def _call_llm(self, system_prompt: str, user_message: str) -> str:
         """Call the LLM (Groq or Gemini) and return the response text"""
-        
+
         if self.provider == 'groq':
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -57,10 +58,10 @@ class AIService:
                     {"role": "user", "content": user_message}
                 ],
                 temperature=0.3,
-                max_tokens=2000
+                max_tokens=4000
             )
             return response.choices[0].message.content
-        
+
         elif self.provider == 'gemini':
             response = self.client.generate_content([
                 {"role": "user", "parts": [system_prompt]},
@@ -68,9 +69,9 @@ class AIService:
                 {"role": "user", "parts": [user_message]}
             ])
             return response.text
-        
+
         raise ValueError("No AI provider configured")
-    
+
     def analyze_dataset_with_prompt(
         self,
         columns: List[str],
@@ -82,8 +83,8 @@ class AIService:
         Analyze a dataset with a user's natural language prompt to suggest
         the best target column for prediction.
         """
-        
-        system_prompt = """You are an expert data scientist assistant. Your task is to analyze a dataset 
+
+        system_prompt = """You are an expert data scientist assistant. Your task is to analyze a dataset
 and determine the best target column for machine learning based on the user's goal.
 
 You must respond with valid JSON only, no markdown formatting. Use this exact structure:
@@ -103,13 +104,13 @@ You must respond with valid JSON only, no markdown formatting. Use this exact st
 
         # Format column info
         column_info = "\n".join([
-            f"- {col} ({column_types.get(col, 'unknown')})" 
+            f"- {col} ({column_types.get(col, 'unknown')})"
             for col in columns
         ])
-        
+
         # Format sample data
         sample_str = json.dumps(sample_data[:5], indent=2, default=str)
-        
+
         user_message = f"""## User's Goal
 {user_prompt}
 
@@ -130,22 +131,22 @@ Respond with JSON only."""
 
         try:
             response_text = self._call_llm(system_prompt, user_message)
-            
+
             # Clean up response if it has markdown code blocks
             response_text = response_text.strip()
             if response_text.startswith("```"):
                 lines = response_text.split("\n")
                 # Remove first and last lines (```json and ```)
                 response_text = "\n".join(lines[1:-1])
-            
+
             result = json.loads(response_text)
-            
+
             # Validate required fields
             required_fields = ['suggested_target', 'problem_type', 'reasoning']
             for field in required_fields:
                 if field not in result:
                     raise ValueError(f"Missing required field: {field}")
-            
+
             # Validate suggested target exists in columns
             if result['suggested_target'] not in columns:
                 # Try to find a close match
@@ -154,9 +155,9 @@ Respond with JSON only."""
                     if col.lower() == suggested or suggested in col.lower():
                         result['suggested_target'] = col
                         break
-            
+
             return result
-            
+
         except json.JSONDecodeError as e:
             return {
                 'suggested_target': None,
@@ -169,14 +170,111 @@ Respond with JSON only."""
         except Exception as e:
             return {
                 'suggested_target': None,
-                'problem_type': 'unknown', 
+                'problem_type': 'unknown',
                 'reasoning': f'AI API error: {str(e)}',
                 'confidence': 0.0,
                 'preprocessing_suggestions': [],
                 'error': str(e)
             }
-    
 
+    # ── AI Synthetic Data Generation ──
+
+    def generate_dataset_schema(self, prompt, num_columns=8):
+        """Generate a dataset schema from a natural language description."""
+
+        system_prompt = """You are an expert data engineer. Given a user's description of a dataset they need,
+generate a complete schema with realistic column definitions.
+
+You MUST respond with valid JSON only, no markdown. Use this exact structure:
+{
+    "name": "suggested_dataset_name",
+    "description": "One-line description of the dataset",
+    "columns": [
+        {
+            "name": "column_name_snake_case",
+            "type": "numeric|integer|categorical|boolean|date|text|id",
+            "description": "What this column represents",
+            "sample_values": ["example1", "example2", "example3"],
+            "config": {}
+        }
+    ]
+}
+
+Rules:
+- Use snake_case for column names
+- Choose realistic column types (not everything should be text)
+- Include 1 ID column at the start
+- sample_values should be realistic examples
+- config should match the type:
+  numeric/integer: {"min": N, "max": N}
+  categorical: {"categories": ["val1", "val2", ...]}
+  boolean: {"true_probability": 0.5}
+  date: {}
+  text: {"length": 20}
+  id: {"prefix": "PREFIX"}
+- Generate between 5 and 15 columns"""
+
+        user_message = (
+            f"Create a dataset schema for: {prompt}\n\n"
+            f"Generate approximately {num_columns} columns. "
+            f"Make columns realistic and domain-appropriate. Respond with JSON only."
+        )
+
+        try:
+            response_text = self._call_llm(system_prompt, user_message)
+            response_text = response_text.strip()
+            if response_text.startswith("```"):
+                lines = response_text.split("\n")
+                response_text = "\n".join(lines[1:-1])
+            result = json.loads(response_text)
+            if 'columns' not in result or not result['columns']:
+                raise ValueError("No columns in response")
+            return result
+        except json.JSONDecodeError as e:
+            return {'error': f'Failed to parse AI schema: {str(e)}'}
+        except Exception as e:
+            return {'error': f'AI schema generation failed: {str(e)}'}
+
+    def generate_dataset_rows(self, schema, num_sample=30):
+        """Generate realistic sample data rows from an approved schema."""
+
+        col_descriptions = "\n".join([
+            f"- {c['name']} ({c['type']}): {c.get('description', 'no description')}"
+            for c in schema
+        ])
+
+        system_prompt = (
+            "You are a data generator. Produce realistic sample data rows.\n"
+            "Respond with valid JSON only — an array of objects. No markdown.\n\n"
+            f"Column definitions:\n{col_descriptions}\n\n"
+            "Rules:\n"
+            "- Values must be realistic and internally consistent\n"
+            "- Numeric values should be numbers not strings\n"
+            "- Boolean values should be true/false not strings\n"
+            "- Dates should be YYYY-MM-DD strings\n"
+            "- IDs should be sequential with the column prefix\n"
+            "- Create diversity — don't repeat the same values"
+        )
+
+        col_keys = ', '.join([c['name'] for c in schema])
+        user_message = (
+            f"Generate exactly {num_sample} realistic data rows as a JSON array.\n"
+            f"Keys: {col_keys}\n"
+            f"Respond with ONLY a JSON array."
+        )
+
+        try:
+            response_text = self._call_llm(system_prompt, user_message)
+            response_text = response_text.strip()
+            if response_text.startswith("```"):
+                lines = response_text.split("\n")
+                response_text = "\n".join(lines[1:-1])
+            rows = json.loads(response_text)
+            if not isinstance(rows, list):
+                raise ValueError("Response is not an array")
+            return rows
+        except (json.JSONDecodeError, Exception):
+            return []
 
 
 # Singleton instance

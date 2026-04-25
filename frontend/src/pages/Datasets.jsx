@@ -4,7 +4,9 @@ import { datasetsApi } from '../services/api'
 import {
     Search, Upload, Trash2, X, Database, Download,
     FileText, ChevronDown, ExternalLink, Loader2,
-    FolderUp, CheckCircle, AlertCircle, Info, ArrowRight
+    FolderUp, CheckCircle, AlertCircle, Info, ArrowRight,
+    Wand2, Plus, Minus, Sparkles, Eye, Save, RotateCcw,
+    MessageSquare, Table, RefreshCw
 } from 'lucide-react'
 import './Datasets.css'
 
@@ -28,13 +30,24 @@ const getStatusBadge = (status) => {
     return <span className={`ds-badge ${s.cls}`}>{s.label}</span>
 }
 
+const KAG_CATEGORIES = [
+    "Agriculture", "Arts & Entertainment", "Biology", "Business", "Climate",
+    "Computer Science", "Crime", "Economics", "Education", "Energy",
+    "Environment", "Fashion", "Finance", "Food", "Games",
+    "Geography", "Healthcare", "History", "Humanities", "Internet",
+    "Journalism", "Law", "Linguistics", "Literature", "Mathematics",
+    "Military", "Music", "Nature", "Physics", "Politics",
+    "Psychology", "Religion", "Science", "Social Science", "Sports",
+    "Technology", "Transportation", "Urban Planning", "Weather", "Web Development"
+]
+
 /* ══════════════════════════════════════ */
 export default function Datasets() {
     const queryClient = useQueryClient()
     const fileInputRef = useRef(null)
 
     /* ── local state ── */
-    const [activeTab, setActiveTab] = useState('library')   // library | search
+    const [activeTab, setActiveTab] = useState('library')   // library | search | generate
     const [showUpload, setShowUpload] = useState(false)
     const [uploading, setUploading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
@@ -45,6 +58,16 @@ export default function Datasets() {
     const [kaggleQuery, setKaggleQuery] = useState('')
     const [kaggleSearchTerm, setKaggleSearchTerm] = useState('')
     const [savingRef, setSavingRef] = useState(null)
+
+    // AI synthetic generation state
+    const [aiStage, setAiStage] = useState('idea')  // idea | prompting | schema | generating | preview | saved
+    const [aiPrompt, setAiPrompt] = useState('')
+    const [aiSchema, setAiSchema] = useState(null)   // { name, description, columns }
+    const [aiRows, setAiRows] = useState(1000)
+    const [aiPreview, setAiPreview] = useState(null)  // { preview: [...], total_rows, columns }
+    const [aiLoading, setAiLoading] = useState(false)
+    const [aiError, setAiError] = useState(null)
+    const [aiRefinePrompt, setAiRefinePrompt] = useState('')
 
     /* ── queries ── */
     const { data: datasetsRes, isLoading } = useQuery({
@@ -116,8 +139,81 @@ export default function Datasets() {
     }
 
     const handleKaggleSearch = (e) => {
-        e.preventDefault()
+        if (e) e.preventDefault()
         if (kaggleQuery.trim()) setKaggleSearchTerm(kaggleQuery.trim())
+    }
+
+    const handleCategoryClick = (cat) => {
+        setKaggleQuery(cat)
+        setKaggleSearchTerm(cat)
+    }
+
+    const handleSearchReset = () => {
+        setKaggleQuery('')
+        setKaggleSearchTerm('')
+    }
+
+    /* ── AI synthetic helpers ── */
+    const handleAiSchema = async (prompt) => {
+        if (!prompt?.trim()) return
+        setAiLoading(true)
+        setAiError(null)
+        setAiStage('prompting')
+        try {
+            const res = await datasetsApi.aiSchema(prompt.trim())
+            const schema = res?.data?.schema
+            if (schema?.error) throw new Error(schema.error)
+            setAiSchema(schema)
+            setAiStage('schema')
+        } catch (err) {
+            setAiError(err?.response?.data?.error || err.message || 'Schema generation failed')
+            setAiStage('idea')
+        } finally {
+            setAiLoading(false)
+        }
+    }
+
+    const handleAiGenerate = async (save = false) => {
+        if (!aiSchema?.columns) return
+        setAiLoading(true)
+        setAiError(null)
+        setAiStage('generating')
+        try {
+            const res = await datasetsApi.aiGenerate({
+                name: aiSchema.name || 'ai_dataset',
+                num_rows: aiRows,
+                columns: aiSchema.columns,
+                save
+            })
+            if (save && res?.data?.saved) {
+                queryClient.invalidateQueries({ queryKey: ['datasets'] })
+                setAiStage('saved')
+                showToast('success', res?.data?.message || 'Dataset saved!')
+            } else {
+                setAiPreview(res?.data)
+                setAiStage('preview')
+            }
+        } catch (err) {
+            setAiError(err?.response?.data?.error || 'Generation failed')
+            setAiStage('schema')
+        } finally {
+            setAiLoading(false)
+        }
+    }
+
+    const handleAiReset = () => {
+        setAiStage('idea')
+        setAiPrompt('')
+        setAiSchema(null)
+        setAiPreview(null)
+        setAiError(null)
+        setAiRefinePrompt('')
+    }
+
+    const handleAiRefine = () => {
+        const newPrompt = aiRefinePrompt.trim() || aiPrompt
+        setAiRefinePrompt('')
+        handleAiSchema(newPrompt)
     }
 
     const handleSaveKaggle = (ds) => {
@@ -157,7 +253,13 @@ export default function Datasets() {
                     className={`ds-tab ${activeTab === 'search' ? 'active' : ''}`}
                     onClick={() => setActiveTab('search')}
                 >
-                    <Search size={15} /> Kaggle Search
+                    <Search size={15} /> Search
+                </button>
+                <button
+                    className={`ds-tab ${activeTab === 'generate' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('generate')}
+                >
+                    <Wand2 size={15} /> Generate
                 </button>
             </nav>
 
@@ -211,13 +313,13 @@ export default function Datasets() {
                         <div className="ds-empty">
                             <FolderUp size={40} />
                             <h3>No datasets yet</h3>
-                            <p>Upload a file or search Kaggle to get started.</p>
+                            <p>Upload a file or search online to get started.</p>
                             <div className="ds-empty-actions">
                                 <button className="ds-btn ds-btn-primary" onClick={() => setShowUpload(true)}>
                                     <Upload size={16} /> Upload
                                 </button>
                                 <button className="ds-btn ds-btn-secondary" onClick={() => setActiveTab('search')}>
-                                    <Search size={16} /> Search Kaggle
+                                    <Search size={16} /> Search Online
                                 </button>
                             </div>
                         </div>
@@ -232,11 +334,16 @@ export default function Datasets() {
                         <Search size={16} className="ds-search-icon" />
                         <input
                             type="text"
-                            placeholder="Search Kaggle datasets…"
+                            placeholder="Search datasets…"
                             value={kaggleQuery}
                             onChange={(e) => setKaggleQuery(e.target.value)}
                             autoFocus
                         />
+                        {kaggleSearchTerm && (
+                            <button type="button" className="ds-btn ds-btn-ghost" onClick={handleSearchReset} title="Reset search">
+                                <X size={15} />
+                            </button>
+                        )}
                         <button type="submit" className="ds-btn ds-btn-primary" disabled={!kaggleQuery.trim() || kaggleFetching}>
                             {kaggleFetching ? <Loader2 size={15} className="spin" /> : 'Search'}
                         </button>
@@ -245,7 +352,7 @@ export default function Datasets() {
                     {kaggleLoading || kaggleFetching ? (
                         <div className="ds-loading">
                             <Loader2 size={28} className="spin" />
-                            <p>Searching Kaggle…</p>
+                            <p>Searching datasets…</p>
                         </div>
                     ) : kaggleSearchTerm && kaggleResults.length === 0 ? (
                         <div className="ds-empty">
@@ -286,9 +393,256 @@ export default function Datasets() {
                     ) : (
                         <div className="ds-search-hint">
                             <Search size={32} />
-                            <p>Search for any Kaggle dataset and save it directly to your library.</p>
+                            <p>Search for any dataset and save it directly to your library.</p>
+
+                            <div className="ds-categories-section">
+                                <span className="ds-categories-title">Quick Discovery</span>
+                                <div className="ds-categories-grid">
+                                    {KAG_CATEGORIES.map(cat => (
+                                        <div
+                                            key={cat}
+                                            className="ds-category-chip"
+                                            onClick={() => handleCategoryClick(cat)}
+                                        >
+                                            {cat}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     )}
+                </section>
+            )}
+
+            {/* ════════ AI GENERATE TAB ════════ */}
+            {activeTab === 'generate' && (
+                <section className="ds-section">
+                    <div className="ds-ai-container">
+                        {/* ── Step Indicator ── */}
+                        <div className="ds-ai-steps">
+                            {[['idea', 'Describe', MessageSquare], ['schema', 'Schema', Table], ['preview', 'Preview', Eye], ['saved', 'Saved', CheckCircle]].map(([key, label, Icon], idx) => (
+                                <div key={key} className={`ds-ai-step ${aiStage === key || (['prompting'].includes(aiStage) && key === 'idea') || (['generating'].includes(aiStage) && key === 'schema') ? 'active' : ''} ${['schema', 'preview', 'saved'].indexOf(aiStage) >= ['schema', 'preview', 'saved'].indexOf(key) && ['schema', 'preview', 'saved'].includes(aiStage) && ['schema', 'preview', 'saved'].includes(key) ? 'done' : ''}`}>
+                                    <div className="ds-ai-step-dot"><Icon size={14} /></div>
+                                    <span>{label}</span>
+                                    {idx < 3 && <div className="ds-ai-step-line" />}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* ── Error Banner ── */}
+                        {aiError && (
+                            <div className="ds-ai-error">
+                                <AlertCircle size={16} />
+                                <span>{aiError}</span>
+                                <button onClick={() => setAiError(null)}><X size={14} /></button>
+                            </div>
+                        )}
+
+                        {/* ═══ STAGE 1: IDEA ═══ */}
+                        {(aiStage === 'idea' || aiStage === 'prompting') && (
+                            <div className="ds-ai-idea">
+                                <div className="ds-ai-idea-header">
+                                    <Sparkles size={24} />
+                                    <div>
+                                        <h2>Describe Your Dataset</h2>
+                                        <p>Tell the AI what kind of data you need — it will design the schema for you.</p>
+                                    </div>
+                                </div>
+
+                                <div className="ds-ai-prompt-box">
+                                    <textarea
+                                        value={aiPrompt}
+                                        onChange={e => setAiPrompt(e.target.value)}
+                                        placeholder="e.g. Student performance dataset with demographics, study habits, and exam scores for 500 students across different departments..."
+                                        rows={4}
+                                        disabled={aiStage === 'prompting'}
+                                    />
+                                    <div className="ds-ai-prompt-footer">
+                                        <div className="ds-ai-row-config">
+                                            <label>Rows:</label>
+                                            <input
+                                                type="number"
+                                                value={aiRows}
+                                                onChange={e => setAiRows(Math.max(10, Math.min(100000, Number(e.target.value))))}
+                                                min={10} max={100000}
+                                            />
+                                        </div>
+                                        <button
+                                            className="ds-btn ds-btn-primary"
+                                            onClick={() => handleAiSchema(aiPrompt)}
+                                            disabled={!aiPrompt.trim() || aiStage === 'prompting'}
+                                        >
+                                            {aiStage === 'prompting'
+                                                ? <><Loader2 size={15} className="spin" /> AI is thinking…</>
+                                                : <><Sparkles size={15} /> Generate Schema</>}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Quick ideas */}
+                                <div className="ds-ai-suggestions">
+                                    <span className="ds-ai-suggestions-label">Quick Ideas:</span>
+                                    {[
+                                        'E-commerce customer transactions with product categories',
+                                        'Hospital patient records with diagnosis and treatment',
+                                        'Employee performance data with department and salary',
+                                        'Student exam results with demographics and study hours',
+                                        'IoT sensor data with temperature humidity and pressure',
+                                        'Real estate listings with price location and features'
+                                    ].map(idea => (
+                                        <button key={idea} className="ds-ai-idea-chip" onClick={() => { setAiPrompt(idea); handleAiSchema(idea) }}>
+                                            {idea}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ═══ STAGE 2: SCHEMA REVIEW ═══ */}
+                        {(aiStage === 'schema' || aiStage === 'generating') && aiSchema && (
+                            <div className="ds-ai-schema">
+                                <div className="ds-ai-schema-header">
+                                    <div>
+                                        <h2>{aiSchema.name || 'Generated Schema'}</h2>
+                                        <p>{aiSchema.description}</p>
+                                    </div>
+                                    <span className="ds-ai-col-count">{aiSchema.columns?.length} columns</span>
+                                </div>
+
+                                <div className="ds-ai-schema-grid">
+                                    {aiSchema.columns?.map((col, i) => (
+                                        <div key={i} className="ds-ai-schema-card">
+                                            <div className="ds-ai-schema-card-top">
+                                                <span className="ds-ai-col-name">{col.name}</span>
+                                                <span className={`ds-ai-col-type-badge type-${col.type}`}>{col.type}</span>
+                                            </div>
+                                            <p className="ds-ai-col-desc">{col.description}</p>
+                                            {col.sample_values && (
+                                                <div className="ds-ai-samples">
+                                                    {col.sample_values.slice(0, 3).map((v, j) => (
+                                                        <code key={j}>{String(v)}</code>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Refine prompt */}
+                                <div className="ds-ai-refine">
+                                    <input
+                                        type="text"
+                                        value={aiRefinePrompt}
+                                        onChange={e => setAiRefinePrompt(e.target.value)}
+                                        placeholder="Modify: add a GPA column, remove age, change categories..."
+                                        onKeyDown={e => e.key === 'Enter' && handleAiRefine()}
+                                    />
+                                    <button className="ds-btn ds-btn-secondary" onClick={handleAiRefine} disabled={aiLoading}>
+                                        <RefreshCw size={14} /> Re-generate
+                                    </button>
+                                </div>
+
+                                <div className="ds-ai-schema-actions">
+                                    <button className="ds-btn ds-btn-ghost" onClick={handleAiReset}>
+                                        <RotateCcw size={15} /> Start Over
+                                    </button>
+                                    <div className="ds-ai-schema-actions-right">
+                                        <div className="ds-ai-row-config">
+                                            <label>Rows:</label>
+                                            <input
+                                                type="number"
+                                                value={aiRows}
+                                                onChange={e => setAiRows(Math.max(10, Math.min(100000, Number(e.target.value))))}
+                                                min={10} max={100000}
+                                            />
+                                        </div>
+                                        <button
+                                            className="ds-btn ds-btn-primary"
+                                            onClick={() => handleAiGenerate(false)}
+                                            disabled={aiLoading}
+                                        >
+                                            {aiStage === 'generating'
+                                                ? <><Loader2 size={15} className="spin" /> Generating data…</>
+                                                : <><Wand2 size={15} /> Generate Preview</>}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ═══ STAGE 3: PREVIEW ═══ */}
+                        {aiStage === 'preview' && aiPreview && (
+                            <div className="ds-ai-preview">
+                                <div className="ds-ai-preview-header">
+                                    <div>
+                                        <h2>Data Preview</h2>
+                                        <p>Showing first {aiPreview.preview?.length || 0} of {aiPreview.total_rows?.toLocaleString()} rows</p>
+                                    </div>
+                                    <div className="ds-ai-preview-actions">
+                                        <button className="ds-btn ds-btn-ghost" onClick={() => setAiStage('schema')}>
+                                            <RotateCcw size={14} /> Back to Schema
+                                        </button>
+                                        <button className="ds-btn ds-btn-secondary" onClick={() => handleAiGenerate(false)} disabled={aiLoading}>
+                                            <RefreshCw size={14} /> Re-generate
+                                        </button>
+                                        <button className="ds-btn ds-btn-primary" onClick={() => handleAiGenerate(true)} disabled={aiLoading}>
+                                            {aiLoading ? <><Loader2 size={15} className="spin" /> Saving…</> : <><Save size={15} /> Save to Library</>}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="ds-ai-table-wrap">
+                                    <table className="ds-ai-table">
+                                        <thead>
+                                            <tr>
+                                                {aiPreview.columns?.map(col => <th key={col}>{col}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {aiPreview.preview?.map((row, i) => (
+                                                <tr key={i}>
+                                                    {aiPreview.columns?.map(col => (
+                                                        <td key={col}>{row[col] === true ? '✓' : row[col] === false ? '✗' : String(row[col] ?? '')}</td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Refine prompt for data */}
+                                <div className="ds-ai-refine">
+                                    <input
+                                        type="text"
+                                        value={aiRefinePrompt}
+                                        onChange={e => setAiRefinePrompt(e.target.value)}
+                                        placeholder="Not happy? Describe changes: make values more realistic, add more variety..."
+                                        onKeyDown={e => { if (e.key === 'Enter') { handleAiRefine() } }}
+                                    />
+                                    <button className="ds-btn ds-btn-secondary" onClick={handleAiRefine} disabled={aiLoading}>
+                                        <RefreshCw size={14} /> Modify Schema
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ═══ STAGE 4: SAVED ═══ */}
+                        {aiStage === 'saved' && (
+                            <div className="ds-ai-saved">
+                                <CheckCircle size={48} />
+                                <h2>Dataset Saved!</h2>
+                                <p>Your AI-generated dataset is now in your library.</p>
+                                <div className="ds-ai-saved-actions">
+                                    <button className="ds-btn ds-btn-secondary" onClick={handleAiReset}>
+                                        <Sparkles size={15} /> Create Another
+                                    </button>
+                                    <button className="ds-btn ds-btn-primary" onClick={() => { handleAiReset(); setActiveTab('library') }}>
+                                        <ArrowRight size={15} /> Go to Library
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </section>
             )}
 

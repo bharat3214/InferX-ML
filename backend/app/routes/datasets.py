@@ -679,3 +679,339 @@ def kaggle_download():
         'message': f'Kaggle dataset "{display_name}" added to your uploads',
         'dataset': dataset.to_dict()
     }), 201
+
+
+# ═══════════════════════════════════════════════════════
+# AI-POWERED SYNTHETIC DATA GENERATION
+# ═══════════════════════════════════════════════════════
+
+@datasets_bp.route('/ai/schema', methods=['POST'])
+@jwt_required()
+def ai_generate_schema():
+    """Use AI to generate a dataset schema from a natural language prompt"""
+    from app.services.gemini_service import get_ai_service
+
+    data = request.get_json()
+    prompt = data.get('prompt', '').strip()
+
+    if not prompt:
+        return jsonify({'error': 'Please describe the dataset you want to create'}), 400
+
+    try:
+        ai = get_ai_service()
+        schema = ai.generate_dataset_schema(prompt, num_columns=data.get('num_columns', 8))
+
+        if 'error' in schema:
+            return jsonify({'error': schema['error']}), 500
+
+        return jsonify({'schema': schema}), 200
+
+    except Exception as e:
+        print(f"AI schema generation error: {e}", flush=True)
+        return jsonify({'error': f'AI service error: {str(e)}'}), 500
+
+
+@datasets_bp.route('/ai/generate', methods=['POST'])
+@jwt_required()
+def ai_generate_data():
+    """Generate realistic data using AI seed rows + programmatic extension"""
+    import pandas as pd
+    import numpy as np
+    import random
+    import string
+    from datetime import datetime, timedelta
+
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    name = data.get('name', 'ai_dataset').strip()
+    num_rows = min(int(data.get('num_rows', 1000)), 100000)
+    columns = data.get('columns', [])
+    save = data.get('save', False)
+
+    if not columns:
+        return jsonify({'error': 'Schema columns are required'}), 400
+
+    # Step 1: Get AI seed rows (30 rows for pattern)
+    try:
+        from app.services.gemini_service import get_ai_service
+        ai = get_ai_service()
+        seed_rows = ai.generate_dataset_rows(columns, num_sample=min(30, num_rows))
+    except Exception as e:
+        print(f"AI row generation error: {e}", flush=True)
+        seed_rows = []
+
+    # Step 2: Build full dataset
+    if seed_rows and len(seed_rows) >= 5:
+        # Use AI seed data as base, extend programmatically if needed
+        seed_df = pd.DataFrame(seed_rows)
+
+        if num_rows <= len(seed_rows):
+            df = seed_df.head(num_rows)
+        else:
+            # Extend by sampling distributions from seed data
+            extended_rows = []
+            for _ in range(num_rows - len(seed_rows)):
+                row = {}
+                for col_def in columns:
+                    col_name = col_def['name']
+                    col_type = col_def.get('type', 'text')
+                    config = col_def.get('config', {})
+
+                    if col_name in seed_df.columns:
+                        seed_values = seed_df[col_name].dropna().tolist()
+                    else:
+                        seed_values = []
+
+                    if col_type == 'id':
+                        prefix = config.get('prefix', 'ID')
+                        row[col_name] = f"{prefix}_{len(seed_rows) + len(extended_rows) + 1:05d}"
+                    elif col_type in ('numeric', 'integer') and seed_values:
+                        numeric_vals = [v for v in seed_values if isinstance(v, (int, float))]
+                        if numeric_vals:
+                            mean_val = np.mean(numeric_vals)
+                            std_val = max(np.std(numeric_vals), 0.1)
+                            val = np.random.normal(mean_val, std_val)
+                            low = float(config.get('min', min(numeric_vals)))
+                            high = float(config.get('max', max(numeric_vals)))
+                            val = np.clip(val, low, high)
+                            row[col_name] = int(round(val)) if col_type == 'integer' else round(float(val), 2)
+                        else:
+                            row[col_name] = 0
+                    elif col_type == 'categorical' and seed_values:
+                        row[col_name] = random.choice(seed_values)
+                    elif col_type == 'boolean':
+                        prob = float(config.get('true_probability', 0.5))
+                        row[col_name] = random.random() < prob
+                    elif col_type == 'date':
+                        start = datetime(2020, 1, 1)
+                        end = datetime(2025, 12, 31)
+                        delta = (end - start).days
+                        row[col_name] = (start + timedelta(days=random.randint(0, delta))).strftime('%Y-%m-%d')
+                    elif seed_values:
+                        row[col_name] = random.choice(seed_values)
+                    else:
+                        row[col_name] = ''
+
+                extended_rows.append(row)
+
+            df = pd.concat([seed_df, pd.DataFrame(extended_rows)], ignore_index=True)
+    else:
+        # Fallback: pure programmatic generation (no AI seed)
+        generated = {}
+        for col_def in columns:
+            col_name = col_def['name']
+            col_type = col_def.get('type', 'text')
+            config = col_def.get('config', {})
+
+            if col_type == 'numeric':
+                low = float(config.get('min', 0))
+                high = float(config.get('max', 100))
+                generated[col_name] = np.round(np.random.uniform(low, high, num_rows), 2)
+            elif col_type == 'integer':
+                low = int(config.get('min', 0))
+                high = int(config.get('max', 100))
+                generated[col_name] = np.random.randint(low, high + 1, num_rows)
+            elif col_type == 'categorical':
+                cats = config.get('categories', ['A', 'B', 'C'])
+                generated[col_name] = np.random.choice(cats, num_rows)
+            elif col_type == 'boolean':
+                prob = float(config.get('true_probability', 0.5))
+                generated[col_name] = np.random.choice([True, False], num_rows, p=[prob, 1 - prob])
+            elif col_type == 'date':
+                start = datetime(2020, 1, 1)
+                end = datetime(2025, 12, 31)
+                delta = (end - start).days
+                generated[col_name] = [(start + timedelta(days=random.randint(0, delta))).strftime('%Y-%m-%d') for _ in range(num_rows)]
+            elif col_type == 'id':
+                prefix = config.get('prefix', 'ID')
+                generated[col_name] = [f'{prefix}_{i+1:05d}' for i in range(num_rows)]
+            else:
+                length = int(config.get('length', 10))
+                generated[col_name] = [''.join(random.choices(string.ascii_lowercase + ' ', k=length)).strip() for _ in range(num_rows)]
+
+        df = pd.DataFrame(generated)
+
+    # Build preview (first 10 rows)
+    preview = df.head(10).to_dict(orient='records')
+
+    # If save=True, persist to MinIO + DB
+    if save:
+        csv_buffer = io.BytesIO()
+        df.to_csv(csv_buffer, index=False)
+        csv_bytes = csv_buffer.getvalue()
+        file_size = len(csv_bytes)
+
+        filename = f'{name.replace(" ", "_").lower()}.csv'
+        file_path = f'{user_id}/ai_{filename}'
+
+        try:
+            from app.services.minio_service import get_minio_service
+            minio_service = get_minio_service()
+            minio_service.upload_bytes(
+                bucket='datasets',
+                object_name=file_path,
+                data=csv_bytes,
+                content_type='text/csv'
+            )
+        except Exception as e:
+            print(f"MinIO upload failed: {e}")
+            file_path = f'local/{user_id}/ai_{filename}'
+
+        dataset_obj = Dataset(
+            name=name,
+            description=f'AI-generated dataset with {num_rows} rows and {len(columns)} columns',
+            file_path=file_path,
+            file_type='csv',
+            file_size=file_size,
+            data_type='tabular',
+            num_rows=num_rows,
+            num_columns=len(columns),
+            column_info={
+                col_name: {'dtype': str(df[col_name].dtype), 'null_count': 0}
+                for col_name in df.columns
+            },
+            user_id=user_id,
+            profile_status='completed'
+        )
+
+        db.session.add(dataset_obj)
+        db.session.commit()
+
+        return jsonify({
+            'message': f'AI dataset "{name}" saved with {num_rows} rows',
+            'dataset': dataset_obj.to_dict(),
+            'preview': preview,
+            'saved': True
+        }), 201
+
+    # Preview only (not saved yet)
+    return jsonify({
+        'preview': preview,
+        'total_rows': num_rows,
+        'columns': [c['name'] for c in columns],
+        'saved': False
+    }), 200
+
+
+@datasets_bp.route('/generate-synthetic', methods=['POST'])
+@jwt_required()
+def generate_synthetic():
+    """Generate a synthetic dataset from a user-defined schema"""
+    import pandas as pd
+    import numpy as np
+    import io
+    import random
+    import string
+    from datetime import datetime, timedelta
+
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+
+    name = data.get('name', 'synthetic_data').strip()
+    num_rows = min(int(data.get('num_rows', 1000)), 100000)  # Cap at 100k
+    columns = data.get('columns', [])
+
+    if not columns:
+        return jsonify({'error': 'At least one column is required'}), 400
+    if not name:
+        return jsonify({'error': 'Dataset name is required'}), 400
+
+    # Generate data for each column
+    generated = {}
+    for col in columns:
+        col_name = col.get('name', 'column').strip()
+        col_type = col.get('type', 'numeric')
+
+        if col_type == 'numeric':
+            low = float(col.get('min', 0))
+            high = float(col.get('max', 100))
+            decimals = int(col.get('decimals', 2))
+            generated[col_name] = np.round(np.random.uniform(low, high, num_rows), decimals)
+
+        elif col_type == 'integer':
+            low = int(col.get('min', 0))
+            high = int(col.get('max', 100))
+            generated[col_name] = np.random.randint(low, high + 1, num_rows)
+
+        elif col_type == 'categorical':
+            categories = col.get('categories', ['A', 'B', 'C'])
+            if isinstance(categories, str):
+                categories = [c.strip() for c in categories.split(',')]
+            generated[col_name] = np.random.choice(categories, num_rows)
+
+        elif col_type == 'boolean':
+            prob = float(col.get('true_probability', 0.5))
+            generated[col_name] = np.random.choice([True, False], num_rows, p=[prob, 1 - prob])
+
+        elif col_type == 'date':
+            start = datetime(2020, 1, 1)
+            end = datetime(2025, 12, 31)
+            delta = (end - start).days
+            dates = [start + timedelta(days=random.randint(0, delta)) for _ in range(num_rows)]
+            generated[col_name] = [d.strftime('%Y-%m-%d') for d in dates]
+
+        elif col_type == 'text':
+            length = int(col.get('length', 10))
+            generated[col_name] = [
+                ''.join(random.choices(string.ascii_lowercase + ' ', k=length)).strip()
+                for _ in range(num_rows)
+            ]
+
+        elif col_type == 'id':
+            prefix = col.get('prefix', 'ID')
+            generated[col_name] = [f'{prefix}_{i+1:05d}' for i in range(num_rows)]
+
+        else:
+            generated[col_name] = np.random.uniform(0, 100, num_rows)
+
+    df = pd.DataFrame(generated)
+
+    # Convert to CSV bytes
+    csv_buffer = io.BytesIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_bytes = csv_buffer.getvalue()
+    file_size = len(csv_bytes)
+
+    filename = f'{name.replace(" ", "_").lower()}.csv'
+    file_path = f'{user_id}/synthetic_{filename}'
+
+    # Upload to MinIO
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        minio_service.upload_bytes(
+            bucket='datasets',
+            object_name=file_path,
+            data=csv_bytes,
+            content_type='text/csv'
+        )
+    except Exception as e:
+        print(f"MinIO upload failed: {e}")
+        file_path = f'local/{user_id}/synthetic_{filename}'
+
+    # Create database record
+    dataset_obj = Dataset(
+        name=name,
+        description=f'Synthetic dataset with {num_rows} rows and {len(columns)} columns',
+        file_path=file_path,
+        file_type='csv',
+        file_size=file_size,
+        data_type='tabular',
+        num_rows=num_rows,
+        num_columns=len(columns),
+        column_info={
+            col_name: {'dtype': str(df[col_name].dtype), 'null_count': 0}
+            for col_name in df.columns
+        },
+        user_id=user_id,
+        profile_status='completed'
+    )
+
+    db.session.add(dataset_obj)
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Synthetic dataset "{name}" generated with {num_rows} rows',
+        'dataset': dataset_obj.to_dict()
+    }), 201

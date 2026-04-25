@@ -1,5 +1,6 @@
 .predictions-page {
-    max-width: 1200px;
+    width: 90%;
+    margin: 0 auto;
 }
 
 .predictions-page.predictions-fullscreen {

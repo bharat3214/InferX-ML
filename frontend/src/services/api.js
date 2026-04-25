@@ -60,7 +60,10 @@ export const datasetsApi = {
     getProfile: (id) => api.get(`/datasets/${id}/profile`),
     useSample: (sampleId) => api.post('/datasets/use-sample', { sample_id: sampleId }),
     searchKaggle: (query, page = 1) => api.get('/datasets/kaggle/search', { params: { q: query, page } }),
-    downloadKaggle: (ref, name) => api.post('/datasets/kaggle/download', { ref, name }, { timeout: 120000 })
+    downloadKaggle: (ref, name) => api.post('/datasets/kaggle/download', { ref, name }, { timeout: 120000 }),
+    generateSynthetic: (config) => api.post('/datasets/generate-synthetic', config, { timeout: 60000 }),
+    aiSchema: (prompt) => api.post('/datasets/ai/schema', { prompt }, { timeout: 30000 }),
+    aiGenerate: (config) => api.post('/datasets/ai/generate', config, { timeout: 120000 }),
 }
 
 export const trainingApi = {
