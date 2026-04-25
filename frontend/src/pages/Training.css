@@ -935,3 +935,31 @@
 @keyframes shimmer {
     100% { transform: translateX(100%); }
 }
+
+.btn-download-logs {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 0.725rem;
+    font-weight: 600;
+    color: var(--color-primary-light, #6ee7b7);
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.btn-download-logs:hover {
+    background: rgba(16, 185, 129, 0.18);
+    border-color: rgba(16, 185, 129, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-download-logs:active {
+    transform: translateY(0);
+}

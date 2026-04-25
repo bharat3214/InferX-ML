@@ -17,7 +17,8 @@ import {
     BarChart3,
     Terminal,
     ImageIcon,
-    Settings
+    Settings,
+    Download
 } from 'lucide-react'
 import { datasetsApi, trainingApi, modelsApi } from '../services/api'
 import LearningTimeline from '../components/LearningTimeline'
@@ -272,6 +273,50 @@ export default function Training() {
             logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
         }
     }, [combinedLogs])
+
+    const handleDownloadLogs = () => {
+        if (!currentJob) return;
+
+        let logContent = `INFERX-ML TRAINING LOG\n`;
+        logContent += `======================\n`;
+        logContent += `Experiment: ${currentJob.name}\n`;
+        logContent += `Status: ${statusData?.data?.experiment?.status || 'Unknown'}\n`;
+        logContent += `Timestamp: ${new Date().toLocaleString()}\n\n`;
+
+        logContent += `DEVELOPER LOGS\n`;
+        logContent += `--------------\n`;
+        logContent += combinedLogs || 'No developer logs available.';
+        logContent += `\n\n`;
+
+        if (thinkingMessages && thinkingMessages.length > 0) {
+            logContent += `THINKING LOGS (AI INNER MONOLOGUE)\n`;
+            logContent += `----------------------------------\n`;
+            thinkingMessages.forEach(msg => {
+                const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : 'N/A';
+                logContent += `[${time}] ${msg.message}\n`;
+            });
+            logContent += `\n\n`;
+        }
+
+        if (explanationData && explanationData.insights) {
+            logContent += `ACTIVITY INSIGHTS (WHAT MODEL DID)\n`;
+            logContent += `----------------------------------\n`;
+            explanationData.insights.forEach(insight => {
+                const time = insight.timestamp ? new Date(insight.timestamp).toLocaleTimeString() : 'N/A';
+                logContent += `[${time}] [${insight.phase || 'General'}] ${insight.message}\n`;
+            });
+        }
+
+        const blob = new Blob([logContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `training_log_${currentJob.name.replace(/\s+/g, '_')}_${currentJob.id}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
 
     const experimentStatus = statusData?.data?.experiment?.status
 
@@ -618,6 +663,16 @@ export default function Training() {
                         <div className="panel-header">
                             <Brain size={16} />
                             <span>What the Model is Doing</span>
+                            {currentJob && (
+                                <button 
+                                    className="btn-download-logs" 
+                                    onClick={handleDownloadLogs}
+                                    title="Download Full Training Log"
+                                >
+                                    <Download size={14} />
+                                    <span>Download Log</span>
+                                </button>
+                            )}
                         </div>
 
                         {currentJob ? (
