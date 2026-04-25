@@ -481,3 +481,201 @@ def use_sample_dataset():
         'message': 'Sample dataset added to your uploads',
         'dataset': dataset.to_dict()
     }), 201
+
+
+# ══════════════════════════════════════════════════════════
+# Kaggle API Integration — Search & Download
+# ══════════════════════════════════════════════════════════
+import os
+import tempfile
+import glob as _glob
+
+def _get_kaggle_api():
+    """Initialise and return an authenticated KaggleApi instance."""
+    # Try standard Kaggle env vars first
+    username = os.environ.get('KAGGLE_USERNAME')
+    key = os.environ.get('KAGGLE_KEY')
+
+    # If not found, try combined token username:key
+    if not username or not key:
+        token = os.environ.get('KAGGLE_API_TOKEN', '')
+        if ':' in token:
+            username, key = token.split(':', 1)
+            os.environ['KAGGLE_USERNAME'] = username
+            os.environ['KAGGLE_KEY'] = key
+        else:
+            # Fallback for dev if nothing else is provided
+            os.environ['KAGGLE_USERNAME'] = 'alok920'
+            os.environ['KAGGLE_KEY'] = '5547498f46540188897a92e3222effbe'
+
+    from kaggle.api.kaggle_api_extended import KaggleApi
+    api = KaggleApi()
+    api.authenticate()
+    return api
+
+
+@datasets_bp.route('/kaggle/search', methods=['GET'])
+@jwt_required()
+def kaggle_search():
+    """Search Kaggle datasets by query string.
+
+    Query params:
+        q   – search term (required)
+        page – result page (optional, default 1)
+    """
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({'error': 'Query parameter "q" is required'}), 400
+
+    page = int(request.args.get('page', 1))
+
+    try:
+        api = _get_kaggle_api()
+        results = api.dataset_list(search=query, page=page)
+    except Exception as e:
+        return jsonify({'error': f'Kaggle API error: {str(e)}'}), 502
+
+    datasets_out = []
+    for ds in results:
+        # ds is a dict-like object from kaggle SDK
+        ref = ds.ref if hasattr(ds, 'ref') else (ds.get('ref') if isinstance(ds, dict) else str(ds))
+        title = ds.title if hasattr(ds, 'title') else (ds.get('title') if isinstance(ds, dict) else ref)
+        subtitle = ds.subtitle if hasattr(ds, 'subtitle') else (ds.get('subtitle') if isinstance(ds, dict) else '')
+        total_bytes = ds.totalBytes if hasattr(ds, 'totalBytes') else (ds.get('totalBytes') if isinstance(ds, dict) else 0)
+        download_count = ds.downloadCount if hasattr(ds, 'downloadCount') else (ds.get('downloadCount') if isinstance(ds, dict) else 0)
+        vote_count = ds.voteCount if hasattr(ds, 'voteCount') else (ds.get('voteCount') if isinstance(ds, dict) else 0)
+        last_updated = ds.lastUpdated if hasattr(ds, 'lastUpdated') else (ds.get('lastUpdated') if isinstance(ds, dict) else '')
+        usability = ds.usabilityRating if hasattr(ds, 'usabilityRating') else (ds.get('usabilityRating') if isinstance(ds, dict) else 0)
+
+        datasets_out.append({
+            'ref': ref,
+            'title': title,
+            'subtitle': subtitle or '',
+            'totalBytes': total_bytes or 0,
+            'downloadCount': download_count or 0,
+            'voteCount': vote_count or 0,
+            'lastUpdated': str(last_updated) if last_updated else '',
+            'usabilityRating': round(float(usability or 0), 2),
+            'url': f'https://www.kaggle.com/datasets/{ref}',
+        })
+
+    return jsonify({'datasets': datasets_out, 'query': query, 'page': page}), 200
+
+
+@datasets_bp.route('/kaggle/download', methods=['POST'])
+@jwt_required()
+def kaggle_download():
+    """Download a Kaggle dataset by ref and add it to the user's library.
+
+    Body JSON:
+        ref   – Kaggle dataset ref, e.g. "heptapod/titanic" (required)
+        name  – optional display name
+    """
+    user_id = int(get_jwt_identity())
+    data = request.get_json()
+    ref = data.get('ref', '').strip()
+
+    if not ref:
+        return jsonify({'error': 'Dataset "ref" is required'}), 400
+
+    display_name = data.get('name', ref.split('/')[-1].replace('-', ' ').title())
+
+    # Check duplicate
+    existing = Dataset.query.filter_by(user_id=user_id, name=display_name).first()
+    if existing:
+        return jsonify({'message': 'Dataset already in your uploads', 'dataset': existing.to_dict()}), 200
+
+    # Download to temp dir
+    tmp_dir = tempfile.mkdtemp(prefix='kaggle_')
+    try:
+        api = _get_kaggle_api()
+        api.dataset_download_files(ref, path=tmp_dir, unzip=True)
+    except Exception as e:
+        return jsonify({'error': f'Kaggle download failed: {str(e)}'}), 502
+
+    # Find first CSV / Excel file in downloaded contents
+    patterns = ['*.csv', '*.xlsx', '*.xls']
+    found_file = None
+    for pattern in patterns:
+        matches = _glob.glob(os.path.join(tmp_dir, '**', pattern), recursive=True)
+        if matches:
+            # Prefer the largest file (likely the main dataset)
+            found_file = max(matches, key=os.path.getsize)
+            break
+
+    if not found_file:
+        # Cleanup
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return jsonify({'error': 'No CSV or Excel file found in the downloaded dataset'}), 422
+
+    # Read file content
+    with open(found_file, 'rb') as f:
+        file_content = f.read()
+
+    filename = secure_filename(os.path.basename(found_file))
+    file_type = filename.rsplit('.', 1)[1].lower()
+    file_size = len(file_content)
+
+    # Upload to MinIO
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        file_path = f'{user_id}/{filename}'
+        minio_service.upload_bytes(
+            bucket='datasets',
+            object_name=file_path,
+            data=file_content,
+            content_type='text/csv' if file_type == 'csv' else 'application/octet-stream'
+        )
+    except Exception as e:
+        print(f"MinIO upload failed: {e}")
+        file_path = f'local/{user_id}/{filename}'
+
+    # Create DB record
+    dataset = Dataset(
+        name=display_name,
+        description=f'Imported from Kaggle: {ref}',
+        file_path=file_path,
+        file_type=file_type,
+        file_size=file_size,
+        user_id=user_id,
+        profile_status='pending'
+    )
+    db.session.add(dataset)
+    db.session.commit()
+
+    # Quick profiling
+    if file_type in ['csv', 'xlsx', 'xls'] and file_size < 50 * 1024 * 1024:
+        try:
+            import pandas as pd
+            if file_type == 'csv':
+                df = pd.read_csv(io.BytesIO(file_content))
+            else:
+                df = pd.read_excel(io.BytesIO(file_content))
+
+            dataset.num_rows = len(df)
+            dataset.num_columns = len(df.columns)
+            dataset.data_type = 'tabular'
+            dataset.column_info = {
+                col: {'dtype': str(df[col].dtype), 'null_count': int(df[col].isnull().sum())}
+                for col in df.columns
+            }
+            dataset.profile_status = 'completed'
+            db.session.commit()
+
+            from app.tasks.training_tasks import profile_dataset_task
+            profile_dataset_task.delay(dataset.id)
+        except Exception as e:
+            print(f"Profiling failed: {e}")
+            dataset.profile_status = 'failed'
+            db.session.commit()
+
+    # Cleanup temp dir
+    import shutil
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return jsonify({
+        'message': f'Kaggle dataset "{display_name}" added to your uploads',
+        'dataset': dataset.to_dict()
+    }), 201

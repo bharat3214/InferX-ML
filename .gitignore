@@ -157,3 +157,18 @@ temp/
 .vercel/
 .turbo/
 .cache/
+# Added by code-review-graph
+.code-review-graph/
+
+# -----------------
+# 11. AI Assistant & Editor Configs
+# -----------------
+.claude/
+.cursorrules
+.windsurfrules
+.kiro/
+.mcp.json
+.opencode.json
+AGENTS.md
+CLAUDE.md
+GEMINI.md
