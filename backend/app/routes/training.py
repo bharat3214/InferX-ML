@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models.dataset import Dataset
 from app.models.experiment import Experiment, TrainingJob
+from app.services.problem_detector import ProblemDetector
 import pandas as pd
 import io
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -206,6 +207,66 @@ def start_training():
     max_depth = config.get('max_depth')
     if max_depth is not None and (not isinstance(max_depth, int) or max_depth < 1 or max_depth > 100):
         return jsonify({'error': 'max_depth must be an integer between 1 and 100'}), 400
+
+    # ── Pre-flight dataset validation ─────────────────────────────────────────
+    # Validate dataset content BEFORE creating the experiment so the user gets
+    # an immediate, clear error instead of a silent mid-pipeline failure.
+    if dataset.data_type != 'image' and target_column:
+        try:
+            from app.services.minio_service import get_minio_service
+            _minio = get_minio_service()
+            _file_content = _minio.download_bytes('datasets', dataset.file_path)
+            if _file_content:
+                if dataset.file_path.lower().endswith(('.xlsx', '.xls')):
+                    _df_check = pd.read_excel(io.BytesIO(_file_content), nrows=5)
+                else:
+                    _df_check = pd.read_csv(io.BytesIO(_file_content), nrows=5)
+
+                _cols = list(_df_check.columns)
+
+                # Check 1: target column must exist in the dataset
+                if target_column not in _cols:
+                    return jsonify({
+                        'error': f'Target column "{target_column}" not found in the dataset.',
+                        'available_columns': _cols[:15],
+                        'suggestion': (
+                            'Your CSV may be missing a header row. '
+                            'The first data row may have been used as column names. '
+                            'Please re-upload with proper column headers.'
+                        )
+                    }), 400
+
+                # Check 2: target column name looks like a data row, not a real header.
+                # Catches CSVs uploaded without a header (e.g. Boston Housing dataset).
+                import re as _re
+                _stripped = target_column.strip()
+                _suspicious = bool(_re.search(r'\d+\.\d+.*\d+\.\d+', _stripped))
+                if _suspicious:
+                    return jsonify({
+                        'error': 'The selected target column name looks like raw data, not a column header.',
+                        'bad_column': target_column,
+                        'hint': (
+                            'Your CSV likely has no header row. '
+                            'Pandas used the first data row as column names.'
+                        ),
+                        'suggestion': (
+                            'Re-upload your CSV with a proper header row '
+                            '(e.g. "CRIM,ZN,INDUS,...,MEDV") or use the '
+                            'dataset editing tools to add headers before training.'
+                        )
+                    }), 400
+
+                # Check 3: after dropping target, at least 1 feature column must remain
+                _remaining = [c for c in _cols if c != target_column]
+                if len(_remaining) == 0:
+                    return jsonify({
+                        'error': 'After selecting the target column, no feature columns remain.',
+                        'suggestion': 'Your dataset must have at least 2 columns: one target and at least one feature.'
+                    }), 400
+
+        except Exception as _pre_err:
+            # Non-fatal: pre-flight errors should not block training; let it proceed naturally
+            print(f'[Pre-flight validation skipped]: {_pre_err}', flush=True)
 
     # Create experiment
     experiment = Experiment(
@@ -552,6 +613,9 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
     if not experiment:
         return
 
+    # Extract goal_description from experiment (set during creation)
+    goal_description = experiment.goal_description or ''
+
     # Import ExplanationEngine and AI Insight Generator
     from app.services.explanation_engine import ExplanationEngine
     from app.services.ai_insight_generator import ai_insight_generator
@@ -658,23 +722,93 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         X = df.drop(columns=[target_column])
         y = df[target_column]
 
-        # Detect problem type
-        _update_thinking_log(experiment, f"🔍 Analyzing target column '{target_column}'...")
-        if y.dtype == 'object' or y.nunique() < 10:
-            problem_type = 'classification'
-            _update_thinking_log(experiment, f"🎯 Detected problem type: Classification ({y.nunique()} unique classes)")
-            ExplanationEngine.emit_insight(experiment, f"Target '{target_column}' → Classification ({y.nunique()} classes detected)", 'preprocessing')
-            if y.dtype == 'object':
-                le = LabelEncoder()
-                y = le.fit_transform(y)
-                ExplanationEngine.emit_insight(experiment, f"Label-encoded categorical target into {y.max()+1} numeric classes", 'preprocessing')
-                _update_thinking_log(experiment, "🔧 Encoded categorical target labels")
-        else:
-            problem_type = 'regression'
-            _update_thinking_log(experiment, f"🎯 Detected problem type: Regression (continuous values)")
-            ExplanationEngine.emit_insight(experiment, f"Target '{target_column}' → Regression (continuous, range: {y.min():.2f} – {y.max():.2f})", 'preprocessing')
+        # Detect problem type with deterministic logic, then optionally verify with AI.
+        _update_thinking_log(experiment, f"Analyzing target column '{target_column}'...")
+        detector = ProblemDetector(df, target_column, goal_description=goal_description or '')
+        deterministic_detection = detector.detect()
+        raw_problem_type = deterministic_detection.get('problem_type', 'unknown')
+        problem_type = 'classification' if 'classification' in raw_problem_type else raw_problem_type
+        detection_source = 'deterministic'
+        ai_verification = None
 
+        config = experiment.config or {}
+        if config.get('ai_verify_problem_type', True):
+            try:
+                from app.services.gemini_service import get_gemini_service
+
+                ai_service = get_gemini_service()
+                ai_verification = ai_service.verify_problem_detection(
+                    columns=list(df.columns),
+                    column_types={col: str(df[col].dtype) for col in df.columns},
+                    sample_data=df.head(10).to_dict(orient='records'),
+                    target_column=target_column,
+                    deterministic_detection=deterministic_detection,
+                    user_goal=goal_description or ''
+                )
+                ai_problem_type = ai_verification.get('problem_type', 'unknown')
+                ai_confidence = float(ai_verification.get('confidence') or 0)
+                deterministic_confidence = float(deterministic_detection.get('confidence') or 0)
+
+                if (
+                    ai_problem_type != 'unknown' and
+                    ai_problem_type != raw_problem_type and
+                    ai_confidence >= 0.85 and
+                    ai_confidence >= deterministic_confidence + 0.1
+                ):
+                    raw_problem_type = ai_problem_type
+                    problem_type = 'classification' if 'classification' in raw_problem_type else raw_problem_type
+                    detection_source = 'ai_verified_override'
+                    _update_thinking_log(experiment, f"AI verification adjusted problem type to {problem_type}")
+                else:
+                    detection_source = 'ai_verified_agree' if ai_verification.get('agreement') else 'deterministic_ai_checked'
+                    _update_thinking_log(experiment, f"AI verification checked problem type: {problem_type}")
+
+                if ai_verification.get('reasoning'):
+                    ExplanationEngine.emit_insight(experiment, f"AI verification: {ai_verification['reasoning']}", 'preprocessing')
+            except Exception as e:
+                ai_verification = {
+                    'problem_type': 'unknown',
+                    'confidence': 0.0,
+                    'reasoning': f'AI verification skipped: {str(e)}'
+                }
+                print(f"AI problem verification failed: {e}", flush=True)
+
+        if problem_type not in ['classification', 'regression']:
+            problem_type = 'classification' if y.nunique() <= 20 else 'regression'
+            detection_source = f'{detection_source}_fallback'
+
+        if problem_type == 'classification':
+            _update_thinking_log(experiment, f"Detected problem type: Classification ({y.nunique()} unique classes)")
+            ExplanationEngine.emit_insight(
+                experiment,
+                f"Target '{target_column}' -> Classification ({y.nunique()} classes, source: {detection_source})",
+                'preprocessing'
+            )
+            if y.dtype == 'object' or str(y.dtype) == 'category' or str(y.dtype) == 'bool':
+                le = LabelEncoder()
+                y = le.fit_transform(y.astype(str))
+                ExplanationEngine.emit_insight(experiment, f"Label-encoded categorical target into {int(max(y))+1} numeric classes", 'preprocessing')
+                _update_thinking_log(experiment, "Encoded categorical target labels")
+        else:
+            _update_thinking_log(experiment, "Detected problem type: Regression (continuous values)")
+            ExplanationEngine.emit_insight(
+                experiment,
+                f"Target '{target_column}' -> Regression (source: {detection_source})",
+                'preprocessing'
+            )
+
+        problem_detection = {
+            'selected_problem_type': problem_type,
+            'raw_problem_type': raw_problem_type,
+            'source': detection_source,
+            'deterministic': deterministic_detection,
+            'ai_verification': ai_verification
+        }
         experiment.problem_type = problem_type
+        experiment.results = {
+            **(experiment.results or {}),
+            'problem_detection': problem_detection
+        }
         db.session.commit()
 
         # Preprocessing steps with detailed logging
@@ -936,7 +1070,8 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
             'best_model': best_model_name,
             'best_score': float(best_score),
             'problem_type': problem_type,
-            'feature_names': list(X.columns)
+            'feature_names': list(X.columns),
+            'problem_detection': problem_detection
         }
         db.session.commit()
 

@@ -183,7 +183,7 @@ def run_training_pipeline(
         
     else:
         # Auto-detect problem type
-        detector = ProblemDetector(df, target_column)
+        detector = ProblemDetector(df, target_column, goal_description=experiment.goal_description or '')
         detection = detector.detect()
         problem_type = detection['problem_type']
         

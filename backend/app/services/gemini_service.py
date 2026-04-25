@@ -178,6 +178,111 @@ Respond with JSON only."""
                 'error': str(e)
             }
 
+    def verify_problem_detection(
+        self,
+        columns: List[str],
+        column_types: Dict[str, str],
+        sample_data: List[Dict[str, Any]],
+        target_column: Optional[str],
+        deterministic_detection: Dict[str, Any],
+        user_goal: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Ask AI to verify the deterministic problem-type decision.
+        The caller should treat this as a second opinion, not the single source of truth.
+        """
+
+        system_prompt = """You are a senior machine learning reviewer. Verify a deterministic
+problem-type decision for an AutoML training pipeline.
+
+Respond with valid JSON only, no markdown. Use this exact structure:
+{
+    "agreement": true,
+    "problem_type": "classification|binary_classification|multiclass_classification|regression|clustering|timeseries|object_detection|image_classification|unknown",
+    "confidence": 0.85,
+    "reasoning": "Short reason grounded in the target column and sample rows",
+    "target_column": "column_name_or_null",
+    "warnings": ["warning 1"],
+    "recommended_algorithms": ["algorithm_key"]
+}
+
+Rules:
+- Prefer the deterministic result when the evidence is ambiguous.
+- Use classification for categorical labels, binary_classification for two labels, regression for continuous numeric targets.
+- Use clustering only when there is no target column.
+- Use timeseries only when the user's goal is forecasting or prediction over time.
+- Never invent a target column that is not present."""
+
+        sample_str = json.dumps(sample_data[:8], indent=2, default=str)
+        detection_str = json.dumps(deterministic_detection, indent=2, default=str)
+        column_info = "\n".join([
+            f"- {col} ({column_types.get(col, 'unknown')})"
+            for col in columns
+        ])
+
+        user_message = f"""## User Goal
+{user_goal or 'Train the best model for the selected target.'}
+
+## Selected Target
+{target_column or 'None'}
+
+## Dataset Columns
+{column_info}
+
+## Sample Rows
+{sample_str}
+
+## Deterministic Detection
+{detection_str}
+
+Verify whether the deterministic problem type is correct. Respond with JSON only."""
+
+        try:
+            response_text = self._call_llm(system_prompt, user_message).strip()
+            if response_text.startswith("```"):
+                lines = response_text.split("\n")
+                response_text = "\n".join(lines[1:-1])
+
+            result = json.loads(response_text)
+            result.setdefault('agreement', False)
+            result.setdefault('confidence', 0.0)
+            result.setdefault('warnings', [])
+            result.setdefault('recommended_algorithms', [])
+
+            if result.get('target_column') not in columns:
+                result['target_column'] = target_column
+
+            allowed_types = {
+                'classification', 'binary_classification', 'multiclass_classification',
+                'regression', 'clustering', 'timeseries', 'object_detection',
+                'image_classification', 'unknown'
+            }
+            if result.get('problem_type') not in allowed_types:
+                result['problem_type'] = 'unknown'
+                result['confidence'] = 0.0
+
+            return result
+        except json.JSONDecodeError as e:
+            return {
+                'agreement': False,
+                'problem_type': 'unknown',
+                'confidence': 0.0,
+                'reasoning': f'Failed to parse AI verification response: {str(e)}',
+                'target_column': target_column,
+                'warnings': [str(e)],
+                'recommended_algorithms': []
+            }
+        except Exception as e:
+            return {
+                'agreement': False,
+                'problem_type': 'unknown',
+                'confidence': 0.0,
+                'reasoning': f'AI verification unavailable: {str(e)}',
+                'target_column': target_column,
+                'warnings': [str(e)],
+                'recommended_algorithms': []
+            }
+
     # ── AI Synthetic Data Generation ──
 
     def generate_dataset_schema(self, prompt, num_columns=8):

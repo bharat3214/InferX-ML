@@ -146,6 +146,49 @@ class TestProblemDetector:
         result = detector.detect()
         
         assert result['problem_type'] == 'multiclass_classification'
+
+    def test_numeric_class_codes_detection(self):
+        """Test numeric class codes are not mistaken for regression"""
+        from app.services.problem_detector import ProblemDetector
+
+        df = pd.DataFrame({
+            'feature1': np.random.randn(200),
+            'target': np.random.choice([0, 1, 2], 200)
+        })
+
+        detector = ProblemDetector(df, 'target')
+        result = detector.detect()
+
+        assert result['problem_type'] == 'multiclass_classification'
+
+    def test_timeseries_requires_forecast_goal(self):
+        """Test date columns alone do not force a timeseries problem"""
+        from app.services.problem_detector import ProblemDetector
+
+        df = pd.DataFrame({
+            'date': pd.date_range('2024-01-01', periods=100, freq='D'),
+            'feature1': np.random.randn(100),
+            'target': np.random.uniform(0, 100, 100)
+        })
+
+        detector = ProblemDetector(df, 'target')
+        result = detector.detect()
+
+        assert result['problem_type'] == 'regression'
+
+    def test_timeseries_forecast_goal_detection(self):
+        """Test date columns plus forecasting goal select timeseries"""
+        from app.services.problem_detector import ProblemDetector
+
+        df = pd.DataFrame({
+            'date': pd.date_range('2024-01-01', periods=100, freq='D'),
+            'target': np.random.uniform(0, 100, 100)
+        })
+
+        detector = ProblemDetector(df, 'target', goal_description='forecast next month demand')
+        result = detector.detect()
+
+        assert result['problem_type'] == 'timeseries'
     
     def test_clustering_no_target(self):
         """Test clustering detection when no target specified"""
