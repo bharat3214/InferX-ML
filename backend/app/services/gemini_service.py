@@ -300,7 +300,7 @@ Rules:
 Verify whether the deterministic problem type is correct. Respond with JSON only."""
 
         try:
-            response_text = self._call_llm(system_prompt, user_message).strip()
+            response_text = self.call_llm(system_prompt, user_message).strip()
             if response_text.startswith("```"):
                 lines = response_text.split("\n")
                 response_text = "\n".join(lines[1:-1])
@@ -389,7 +389,7 @@ Rules:
         )
 
         try:
-            response_text = self._call_llm(system_prompt, user_message)
+            response_text = self.call_llm(system_prompt, user_message)
             response_text = response_text.strip()
             if response_text.startswith("```"):
                 lines = response_text.split("\n")
@@ -432,7 +432,7 @@ Rules:
         )
 
         try:
-            response_text = self._call_llm(system_prompt, user_message)
+            response_text = self.call_llm(system_prompt, user_message)
             response_text = response_text.strip()
             if response_text.startswith("```"):
                 lines = response_text.split("\n")

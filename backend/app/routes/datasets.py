@@ -265,7 +265,7 @@ def _suggest_headers_with_ai(raw_rows, column_count, dataset=None):
             "count, score, value, date, id.\n"
             "- No duplicates, spaces, punctuation, explanations, or markdown."
         )
-        response_text = get_ai_service()._call_llm(system_prompt, user_message).strip()
+        response_text = get_ai_service().call_llm(system_prompt, user_message).strip()
         if response_text.startswith('```'):
             response_text = "\n".join(response_text.splitlines()[1:-1]).strip()
         parsed = json.loads(response_text)
