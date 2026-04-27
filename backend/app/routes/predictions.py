@@ -73,6 +73,13 @@ def predict(model_id):
             if os.path.exists(preprocessor_path):
                 preprocessor = joblib.load(preprocessor_path)
             
+            # Load target classes mapping (for classification label decoding)
+            target_classes = None
+            tc_path = os.path.join(temp_dir, 'target_classes.json')
+            if os.path.exists(tc_path):
+                with open(tc_path, 'r') as f:
+                    target_classes = json.load(f)
+            
             # Prepare input as DataFrame
             input_df = pd.DataFrame([input_data])
             
@@ -85,25 +92,60 @@ def predict(model_id):
             # Make prediction
             prediction = model.predict(input_processed)[0]
             
-            # Get probability if classification
+            # Decode classification labels
+            if target_classes is not None and hasattr(prediction, '__int__'):
+                try:
+                    idx = int(prediction)
+                    decoded_prediction = target_classes[idx] if idx < len(target_classes) else prediction
+                except (ValueError, IndexError):
+                    decoded_prediction = prediction
+            else:
+                decoded_prediction = prediction
+            
+            # Round regression floats
+            if isinstance(decoded_prediction, float):
+                decoded_prediction = round(decoded_prediction, 4)
+            
+            # Convert to native Python type
+            if hasattr(decoded_prediction, 'item'):
+                decoded_prediction = decoded_prediction.item()
+            
+            # Get all class probabilities (for classification)
             probability = None
+            class_probabilities = None
             if hasattr(model, 'predict_proba'):
                 try:
                     proba = model.predict_proba(input_processed)[0]
                     probability = float(max(proba))
+                    
+                    # Build class probability dict
+                    if target_classes and len(target_classes) == len(proba):
+                        class_probabilities = {
+                            name: round(float(p), 4)
+                            for name, p in zip(target_classes, proba)
+                        }
+                    else:
+                        class_probabilities = {
+                            f'class_{i}': round(float(p), 4)
+                            for i, p in enumerate(proba)
+                        }
+                    # Sort by probability descending
+                    class_probabilities = dict(
+                        sorted(class_probabilities.items(), key=lambda x: x[1], reverse=True)
+                    )
                 except:
                     pass
             
-            # Convert prediction to native Python type
-            if hasattr(prediction, 'item'):
-                prediction = prediction.item()
-            
-            return jsonify({
-                'prediction': prediction,
+            response = {
+                'prediction': decoded_prediction,
                 'probability': probability,
                 'model_name': experiment.best_model_name,
                 'input': input_data
-            }), 200
+            }
+            if class_probabilities:
+                response['class_probabilities'] = class_probabilities
+            
+            return jsonify(response), 200
             
     except Exception as e:
         import traceback
@@ -115,6 +157,15 @@ def predict(model_id):
 @jwt_required()
 def batch_predict(model_id):
     """Make batch predictions from uploaded file"""
+    from app.services.minio_service import get_minio_service
+    import zipfile
+    import io
+    import json
+    import joblib
+    import tempfile
+    import pandas as pd
+    import numpy as np
+    
     user_id = int(get_jwt_identity())
     
     if 'file' not in request.files:
@@ -128,12 +179,96 @@ def batch_predict(model_id):
     if experiment.status != 'completed':
         return jsonify({'error': 'Model training not completed'}), 400
     
-    # TODO: Process file and make batch predictions
+    try:
+        # Read uploaded CSV
+        file = request.files['file']
+        batch_df = pd.read_csv(file)
+        
+        if len(batch_df) == 0:
+            return jsonify({'error': 'Uploaded file is empty'}), 400
+        
+        if len(batch_df) > 10000:
+            return jsonify({'error': 'Maximum 10,000 rows allowed per batch'}), 400
+        
+        # Download and extract model package
+        minio = get_minio_service()
+        model_data = minio.download_model(experiment.model_path)
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_buffer = io.BytesIO(model_data)
+            with zipfile.ZipFile(zip_buffer, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            import os
+            model = joblib.load(os.path.join(temp_dir, 'model.pkl'))
+            
+            preprocessor = None
+            preprocessor_path = os.path.join(temp_dir, 'preprocessor.pkl')
+            if os.path.exists(preprocessor_path):
+                preprocessor = joblib.load(preprocessor_path)
+            
+            target_classes = None
+            tc_path = os.path.join(temp_dir, 'target_classes.json')
+            if os.path.exists(tc_path):
+                with open(tc_path, 'r') as f:
+                    target_classes = json.load(f)
+            
+            # Apply preprocessing
+            if preprocessor is not None:
+                batch_processed = preprocessor.transform(batch_df)
+            else:
+                batch_processed = batch_df
+            
+            # Predict
+            raw_predictions = model.predict(batch_processed)
+            
+            # Decode predictions
+            decoded = []
+            for pred in raw_predictions:
+                if target_classes is not None and hasattr(pred, '__int__'):
+                    try:
+                        idx = int(pred)
+                        decoded.append(target_classes[idx] if idx < len(target_classes) else str(pred))
+                    except (ValueError, IndexError):
+                        decoded.append(str(pred))
+                elif isinstance(pred, (float, np.floating)):
+                    decoded.append(round(float(pred), 4))
+                else:
+                    if hasattr(pred, 'item'):
+                        decoded.append(pred.item())
+                    else:
+                        decoded.append(pred)
+            
+            # Get confidence if classification
+            confidences = None
+            if hasattr(model, 'predict_proba'):
+                try:
+                    probas = model.predict_proba(batch_processed)
+                    confidences = [round(float(max(p)), 4) for p in probas]
+                except:
+                    pass
+            
+            # Build results
+            results = []
+            for i, pred in enumerate(decoded):
+                row = {
+                    'row_index': i,
+                    'prediction': pred,
+                }
+                if confidences:
+                    row['confidence'] = confidences[i]
+                results.append(row)
+            
+            return jsonify({
+                'predictions': results,
+                'total_rows': len(results),
+                'model_name': experiment.best_model_name
+            }), 200
     
-    return jsonify({
-        'message': 'Batch prediction started',
-        'model_id': model_id
-    }), 202
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Batch prediction failed: {str(e)}'}), 500
 
 
 @predictions_bp.route('/<int:model_id>/explain', methods=['POST'])
@@ -198,6 +333,13 @@ def explain_prediction(model_id):
             if os.path.exists(preprocessor_path):
                 preprocessor = joblib.load(preprocessor_path)
             
+            # Load target classes mapping (for classification label decoding)
+            target_classes = None
+            tc_path = os.path.join(temp_dir, 'target_classes.json')
+            if os.path.exists(tc_path):
+                with open(tc_path, 'r') as f:
+                    target_classes = json.load(f)
+            
             # Prepare input as DataFrame
             input_df = pd.DataFrame([input_data])
             feature_names = list(input_data.keys())
@@ -210,6 +352,19 @@ def explain_prediction(model_id):
             
             # Make prediction
             prediction = model.predict(input_processed)[0]
+            
+            # Decode classification labels
+            if target_classes is not None and hasattr(prediction, '__int__'):
+                try:
+                    idx = int(prediction)
+                    prediction = target_classes[idx] if idx < len(target_classes) else prediction
+                except (ValueError, IndexError):
+                    pass
+            
+            # Round regression floats
+            if isinstance(prediction, float):
+                prediction = round(prediction, 4)
+            
             if hasattr(prediction, 'item'):
                 prediction = prediction.item()
             

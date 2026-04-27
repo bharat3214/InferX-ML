@@ -721,6 +721,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
 
         X = df.drop(columns=[target_column])
         y = df[target_column]
+        target_classes = None
 
         # Detect problem type with deterministic logic, then optionally verify with AI.
         _update_thinking_log(experiment, f"Analyzing target column '{target_column}'...")
@@ -787,8 +788,9 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
             if y.dtype == 'object' or str(y.dtype) == 'category' or str(y.dtype) == 'bool':
                 le = LabelEncoder()
                 y = le.fit_transform(y.astype(str))
+                target_classes = le.classes_.tolist()
                 ExplanationEngine.emit_insight(experiment, f"Label-encoded categorical target into {int(max(y))+1} numeric classes", 'preprocessing')
-                _update_thinking_log(experiment, "Encoded categorical target labels")
+                _update_thinking_log(experiment, f"Encoded categorical target labels: {target_classes}")
         else:
             _update_thinking_log(experiment, "Detected problem type: Regression (continuous values)")
             ExplanationEngine.emit_insight(
@@ -1124,7 +1126,8 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                         'target_column': target_column,
                         'best_model': best_model_name,
                         'best_score': float(best_score),
-                        'training_results': all_results
+                        'training_results': all_results,
+                        'target_classes': target_classes,  # class names for decoding predictions
                     }
 
                     # Create the package directory with all files
