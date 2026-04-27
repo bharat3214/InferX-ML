@@ -76,6 +76,13 @@ class ModelPackager:
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
         
+        # Save target class mapping (for decoding classification predictions)
+        target_classes = metadata.get('target_classes')
+        if target_classes:
+            tc_path = os.path.join(package_dir, 'target_classes.json')
+            with open(tc_path, 'w') as f:
+                json.dump(target_classes, f, indent=2)
+        
         # Generate model_info.json (headline/summary of trained model)
         model_info = self._generate_model_info(metadata, feature_schema)
         model_info_path = os.path.join(package_dir, 'model_info.json')
@@ -440,9 +447,20 @@ def load_model_info():
     with open(info_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
+@st.cache_data
+def load_target_classes():
+    tc_path = os.path.join(SCRIPT_DIR, 'target_classes.json')
+    if os.path.exists(tc_path):
+        with open(tc_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
 # Load model
 model, preprocessor = load_model()
 model_info = load_model_info()
+target_classes = load_target_classes()
+target_col = "{target_col}"
+problem_type = "{problem_type}"
 
 # Header
 st.title("🤖 " + model_info.get('model_name', '{model_name}'))
@@ -453,8 +471,10 @@ with st.sidebar:
     st.header("📊 Model Information")
     st.metric("Algorithm", "{best_model}")
     st.metric("Score", f"{{model_info.get('best_score', 0):.2%}}")
-    st.metric("Target", "{target_col}")
+    st.metric("Target", target_col)
     st.metric("Features", model_info.get('num_features', 0))
+    if target_classes:
+        st.metric("Classes", len(target_classes))
     
     st.divider()
     st.caption("Model trained with InferX-ML")
@@ -464,11 +484,11 @@ if 'input_data' not in st.session_state:
     st.session_state.input_data = {{}}
 
 # Main content
-st.header("🎯 Make a Prediction")
+st.header("🎯 Make Predictions")
 
 # Create input form
 with st.form("prediction_form"):
-    st.subheader("Enter Feature Values")
+    st.subheader("📝 Enter Feature Values")
     
     # Create columns for better layout
     col1, col2 = st.columns(2)
@@ -477,7 +497,7 @@ with st.form("prediction_form"):
     
     with col2:{col2_code}
     
-    submitted = st.form_submit_button("🚀 Predict", use_container_width=True)
+    submitted = st.form_submit_button("✨ Make Prediction", use_container_width=True)
 
 if submitted:
     try:
@@ -491,30 +511,65 @@ if submitted:
             input_processed = input_df
         
         # Make prediction
-        prediction = model.predict(input_processed)
+        raw_prediction = model.predict(input_processed)
+        raw_value = raw_prediction[0]
         
-        # Display result
+        # ═══ Display Result ═══
         st.divider()
-        st.header("📋 Prediction Result")
         
-        result_col1, result_col2 = st.columns([2, 1])
-        
-        with result_col1:
-            st.success(f"**Predicted {target_col}:** {{prediction[0]}}")
-        
-        with result_col2:
-            # Show probability if available
+        if problem_type == 'classification':
+            # Decode label if target_classes mapping exists
+            if target_classes is not None and isinstance(raw_value, (int, np.integer)):
+                predicted_label = target_classes[int(raw_value)] if int(raw_value) < len(target_classes) else str(raw_value)
+            else:
+                predicted_label = str(raw_value)
+            
+            st.success(f"**Predicted {{target_col}}:** {{predicted_label}}")
+            
+            # Show all class probabilities
             if hasattr(model, 'predict_proba'):
                 try:
-                    proba = model.predict_proba(input_processed)
-                    confidence = max(proba[0]) * 100
+                    proba = model.predict_proba(input_processed)[0]
+                    confidence = float(max(proba)) * 100
+                    
                     st.metric("Confidence", f"{{confidence:.1f}}%")
-                except:
+                    
+                    # Build probability DataFrame for chart
+                    if target_classes and len(target_classes) == len(proba):
+                        prob_data = pd.DataFrame({{
+                            'Class': target_classes,
+                            'Probability (%)': [round(p * 100, 2) for p in proba]
+                        }}).sort_values('Probability (%)', ascending=False)
+                    else:
+                        prob_data = pd.DataFrame({{
+                            'Class': [f'Class {{i}}' for i in range(len(proba))],
+                            'Probability (%)': [round(p * 100, 2) for p in proba]
+                        }}).sort_values('Probability (%)', ascending=False)
+                    
+                    st.subheader("📊 Class Probabilities")
+                    st.bar_chart(prob_data.set_index('Class'))
+                    
+                    # Show top 5 as a table
+                    with st.expander("📋 Detailed Probabilities", expanded=False):
+                        st.dataframe(prob_data.reset_index(drop=True), use_container_width=True)
+                except Exception:
                     pass
         
+        else:
+            # Regression — round to 2 decimal places
+            if isinstance(raw_value, (float, np.floating)):
+                display_value = round(float(raw_value), 2)
+            else:
+                display_value = raw_value
+            
+            st.success(f"**Predicted {{target_col}}:** {{display_value}}")
+        
         # Show input summary
-        with st.expander("📝 Input Summary"):
-            st.json(st.session_state.input_data)
+        with st.expander("📝 Input Summary", expanded=True):
+            summary_df = pd.DataFrame([st.session_state.input_data]).T
+            summary_df.columns = ['Value']
+            summary_df.index.name = 'Feature'
+            st.dataframe(summary_df, use_container_width=True)
             
     except Exception as e:
         st.error(f"Prediction failed: {{str(e)}}")

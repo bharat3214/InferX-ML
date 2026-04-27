@@ -376,6 +376,7 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         # PHASE 2: Learning Patterns
         ExplanationEngine.emit_phase(experiment, 'learning', {'features': len(X.columns)})
         _update_thinking_log(experiment, f"🔍 Analyzing target column '{target_column}'...")
+        target_classes = None  # Will hold class names for classification
         if y.dtype == 'object' or y.nunique() < 10:
             problem_type = 'classification'
             _update_thinking_log(experiment, f"🎯 Detected problem type: Classification ({y.nunique()} unique classes)")
@@ -383,7 +384,8 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
             if y.dtype == 'object':
                 le = LabelEncoder()
                 y = le.fit_transform(y)
-                _update_thinking_log(experiment, "🔧 Encoded categorical target labels")
+                target_classes = le.classes_.tolist()  # e.g. ["rice", "wheat", ...]
+                _update_thinking_log(experiment, f"🔧 Encoded categorical target labels: {target_classes}")
         else:
             problem_type = 'regression'
             _update_thinking_log(experiment, f"🎯 Detected problem type: Regression (continuous values)")
@@ -647,7 +649,8 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
                         'target_column': target_column,
                         'best_model': best_model_name,
                         'best_score': float(best_score),
-                        'training_results': all_results
+                        'training_results': all_results,
+                        'target_classes': target_classes,  # class names for decoding predictions
                     }
                     
                     # Create the package directory with all files
