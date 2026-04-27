@@ -5,7 +5,8 @@ import {
     Sparkles,
     ExternalLink,
     ArrowLeft,
-    Box
+    Box,
+    FileSpreadsheet
 } from 'lucide-react'
 import { modelsApi } from '../services/api'
 import './Predictions.css'
@@ -131,15 +132,34 @@ export default function Predictions() {
                     )}
                 </div>
 
-                <a
-                    href={`${STREAMLIT_URL}?model=${selectedModel}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-outline open-external"
-                >
-                    <ExternalLink size={16} />
-                    Open in New Tab
-                </a>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {currentModel?.dataset_id && (
+                        <button
+                            className="btn btn-outline"
+                            onClick={() => window.open(`/datasets/${currentModel.dataset_id}/view`, '_blank')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                color: '#10b981',
+                                fontSize: '0.85rem'
+                            }}
+                        >
+                            <FileSpreadsheet size={15} />
+                            View Dataset
+                        </button>
+                    )}
+                    <a
+                        href={`${STREAMLIT_URL}?model=${selectedModel}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-outline open-external"
+                    >
+                        <ExternalLink size={16} />
+                        Open in New Tab
+                    </a>
+                </div>
             </div>
 
             <div className="streamlit-container">

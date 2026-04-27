@@ -66,6 +66,7 @@ export const datasetsApi = {
     generateSynthetic: (config) => api.post('/datasets/generate-synthetic', config, { timeout: 60000 }),
     aiSchema: (prompt) => api.post('/datasets/ai/schema', { prompt }, { timeout: 30000 }),
     aiGenerate: (config) => api.post('/datasets/ai/generate', config, { timeout: 120000 }),
+    preview: (id) => api.get(`/datasets/${id}/preview`),
 }
 
 export const trainingApi = {

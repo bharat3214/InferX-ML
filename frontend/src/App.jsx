@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import LandingPage from './pages/LandingPage'
 import Dashboard from './pages/Dashboard'
 import Datasets from './pages/Datasets'
+import DatasetViewer from './pages/DatasetViewer'
 import Training from './pages/Training'
 import Models from './pages/Models'
 import Predictions from './pages/Predictions'
@@ -42,6 +43,7 @@ function App() {
                             <Routes>
                                 <Route path="/" element={<Dashboard />} />
                                 <Route path="/datasets" element={<Datasets />} />
+                                <Route path="/datasets/:datasetId/view" element={<DatasetViewer />} />
                                 <Route path="/training" element={<Training />} />
                                 <Route path="/models" element={<Models />} />
                                 <Route path="/predictions/:modelId?" element={<Predictions />} />
