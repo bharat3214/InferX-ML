@@ -58,6 +58,7 @@ export const datasetsApi = {
         }),
     delete: (id) => api.delete(`/datasets/${id}`),
     getProfile: (id) => api.get(`/datasets/${id}/profile`),
+    preview: (id) => api.get(`/datasets/${id}/preview`),
     useSample: (sampleId) => api.post('/datasets/use-sample', { sample_id: sampleId })
 }
 

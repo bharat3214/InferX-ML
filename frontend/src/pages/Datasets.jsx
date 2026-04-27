@@ -931,6 +931,20 @@ export default function Datasets() {
                                 <Trash2 size={18} />
                                 Delete
                             </button>
+                            <button
+                                className="btn btn-outline"
+                                onClick={() => window.open(`/datasets/${selectedDataset.id}/view`, '_blank')}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                                    color: '#10b981'
+                                }}
+                            >
+                                <ExternalLink size={16} />
+                                View Dataset
+                            </button>
                             <button className="btn btn-primary" onClick={() => {
                                 window.location.href = `/training?dataset=${selectedDataset.id}`
                             }}>

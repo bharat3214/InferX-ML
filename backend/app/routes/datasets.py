@@ -357,6 +357,88 @@ def get_dataset_profile(dataset_id):
     }), 200
 
 
+@datasets_bp.route('/<int:dataset_id>/preview', methods=['GET'])
+@jwt_required()
+def preview_dataset(dataset_id):
+    """Get dataset content for the viewer page (up to 500 rows)"""
+    import pandas as pd
+    import numpy as np
+
+    user_id = int(get_jwt_identity())
+    dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
+
+    if not dataset:
+        return jsonify({'error': 'Dataset not found'}), 404
+
+    if dataset.data_type == 'image':
+        return jsonify({'error': 'Preview not supported for image datasets'}), 400
+
+    try:
+        from app.services.minio_service import get_minio_service
+        minio_service = get_minio_service()
+        file_content = minio_service.download_bytes('datasets', dataset.file_path)
+
+        if not file_content:
+            return jsonify({'error': 'Could not download dataset file'}), 500
+
+        # Read into DataFrame
+        file_type = dataset.file_type or ''
+        if file_type in ['xlsx', 'xls']:
+            df = pd.read_excel(io.BytesIO(file_content))
+        else:
+            df = pd.read_csv(io.BytesIO(file_content))
+
+        total_rows = len(df)
+        total_columns = len(df.columns)
+
+        # Build column statistics
+        columns_info = []
+        for col in df.columns:
+            series = df[col]
+            col_info = {
+                'name': col,
+                'dtype': str(series.dtype),
+                'null_count': int(series.isnull().sum()),
+                'unique_count': int(series.nunique()),
+            }
+            if np.issubdtype(series.dtype, np.number):
+                col_info['min'] = float(series.min()) if not pd.isna(series.min()) else None
+                col_info['max'] = float(series.max()) if not pd.isna(series.max()) else None
+                col_info['mean'] = round(float(series.mean()), 4) if not pd.isna(series.mean()) else None
+                col_info['type'] = 'numeric'
+            elif series.dtype == 'object':
+                col_info['top_values'] = series.value_counts().head(5).to_dict()
+                col_info['type'] = 'categorical'
+            else:
+                col_info['type'] = 'other'
+            columns_info.append(col_info)
+
+        # Cap at 500 rows
+        preview_df = df.head(500)
+        # Replace NaN/Inf with None for JSON serialization
+        preview_df = preview_df.replace([np.inf, -np.inf], None)
+        preview_df = preview_df.where(pd.notnull(preview_df), None)
+
+        rows = preview_df.to_dict(orient='records')
+
+        return jsonify({
+            'dataset_id': dataset.id,
+            'name': dataset.name,
+            'file_type': dataset.file_type,
+            'total_rows': total_rows,
+            'total_columns': total_columns,
+            'preview_rows': len(rows),
+            'truncated': total_rows > 500,
+            'columns': columns_info,
+            'rows': rows
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Preview failed: {str(e)}'}), 500
+
+
 @datasets_bp.route('/<int:dataset_id>', methods=['DELETE'])
 @jwt_required()
 def delete_dataset(dataset_id):

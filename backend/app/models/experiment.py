@@ -64,6 +64,7 @@ class Experiment(db.Model):
             'status': self.status,
             'best_model_name': self.best_model_name,
             'best_score': self.best_score,
+            'dataset_id': self.dataset_id,
             'thinking_logs': self.thinking_logs or '',
             'explanation_data': self.explanation_data or {},
             'created_at': self.created_at.isoformat(),
