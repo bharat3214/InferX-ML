@@ -376,6 +376,9 @@ export default function Models() {
     const queryClient = useQueryClient()
     const [downloadingId, setDownloadingId] = useState(null)
     const [analysisModel, setAnalysisModel] = useState(null)
+    const [currentPage, setCurrentPage] = useState(1)
+
+    const MODELS_PER_PAGE = 12
 
     const { data, isLoading } = useQuery({
         queryKey: ['models'],
@@ -383,6 +386,17 @@ export default function Models() {
     })
 
     const models = data?.data?.models || []
+    const totalPages = Math.max(1, Math.ceil(models.length / MODELS_PER_PAGE))
+    const paginatedModels = useMemo(() => {
+        const start = (currentPage - 1) * MODELS_PER_PAGE
+        return models.slice(start, start + MODELS_PER_PAGE)
+    }, [models, currentPage])
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages)
+        }
+    }, [currentPage, totalPages])
 
     const deleteMutation = useMutation({
         mutationFn: (id) => modelsApi.delete(id),
@@ -468,8 +482,9 @@ export default function Models() {
                     <p>Loading models...</p>
                 </div>
             ) : models.length > 0 ? (
+                <>
                 <div className="models-grid">
-                    {models.map((model) => {
+                    {paginatedModels.map((model) => {
                         const allResults = model.results?.all_models || []
                         const chartData = allResults
                             .sort((a, b) => b.score - a.score)
@@ -635,6 +650,29 @@ export default function Models() {
                         )
                     })}
                 </div>
+
+                {totalPages > 1 && (
+                    <div className="models-pagination">
+                        <button
+                            className="btn btn-outline pagination-btn"
+                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                        >
+                            Previous
+                        </button>
+                        <span className="pagination-meta">
+                            Page {currentPage} of {totalPages}
+                        </span>
+                        <button
+                            className="btn btn-outline pagination-btn"
+                            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                        >
+                            Next
+                        </button>
+                    </div>
+                )}
+                </>
             ) : (
                 <div className="empty-state card">
                     <Box size={48} className="empty-icon" />

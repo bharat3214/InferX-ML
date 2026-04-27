@@ -21,6 +21,9 @@ export default function Predictions() {
     const navigate = useNavigate()
     const [selectedModel, setSelectedModel] = useState(modelId || '')
     const [iframeLoading, setIframeLoading] = useState(true)
+    const [currentPage, setCurrentPage] = useState(1)
+
+    const MODELS_PER_PAGE = 12
 
     const { data: modelsData, isLoading } = useQuery({
         queryKey: ['models'],
@@ -28,6 +31,10 @@ export default function Predictions() {
     })
 
     const models = modelsData?.data?.models || []
+    const packagedModels = models.filter((m) => m.has_package)
+    const totalPages = Math.max(1, Math.ceil(packagedModels.length / MODELS_PER_PAGE))
+    const pageStart = (currentPage - 1) * MODELS_PER_PAGE
+    const paginatedModels = packagedModels.slice(pageStart, pageStart + MODELS_PER_PAGE)
 
     // Get selected model details
     const currentModel = models.find(m => String(m.id) === String(selectedModel))
@@ -38,6 +45,12 @@ export default function Predictions() {
             setSelectedModel(modelId)
         }
     }, [modelId])
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages)
+        }
+    }, [currentPage, totalPages])
 
     const handleModelSelect = (id) => {
         setSelectedModel(id)
@@ -64,7 +77,7 @@ export default function Predictions() {
                     <div className="model-selector card">
                         <h2>Select a Model</h2>
                         <div className="models-grid">
-                            {models.filter(m => m.has_package).map((model) => (
+                            {paginatedModels.map((model) => (
                                 <div
                                     key={model.id}
                                     className="model-option"
@@ -88,7 +101,27 @@ export default function Predictions() {
                             ))}
                         </div>
 
-                        {models.filter(m => m.has_package).length === 0 && (
+                        {totalPages > 1 && (
+                            <div className="predictions-pagination">
+                                <button
+                                    className="btn btn-outline pagination-btn"
+                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    Previous
+                                </button>
+                                <span className="pagination-info">Page {currentPage} of {totalPages}</span>
+                                <button
+                                    className="btn btn-outline pagination-btn"
+                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        )}
+
+                        {packagedModels.length === 0 && (
                             <div className="no-models-message">
                                 <Box size={48} className="empty-icon" />
                                 <p>No models with prediction packages available.</p>

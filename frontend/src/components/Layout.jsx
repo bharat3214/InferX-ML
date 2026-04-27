@@ -81,7 +81,6 @@ export default function Layout({ children }) {
                             </div>
                             <div className="user-details">
                                 <span className="username">{user.username}</span>
-                                <span className="email">{user.email}</span>
                             </div>
                         </div>
                     )}
