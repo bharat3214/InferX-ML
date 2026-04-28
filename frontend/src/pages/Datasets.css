@@ -4,7 +4,7 @@
 
 /* ── Page ── */
 .ds-page {
-    width: 90%;
+    width: min(100%, 1120px);
     margin: 0 auto;
     padding: 0 0 40px;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -107,7 +107,7 @@
 .ds-table-wrap {
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 8px;
-    overflow: hidden;
+    overflow-x: auto;
 }
 
 .ds-table {
@@ -776,6 +776,12 @@
     background: rgba(255, 255, 255, 0.01);
 }
 
+@media (max-width: 1280px) {
+    .ds-page {
+        width: 100%;
+    }
+}
+
 /* ── Step Indicator ── */
 .ds-ai-steps {
     display: flex;
@@ -1252,6 +1258,33 @@
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
+    .ds-header {
+        gap: 12px;
+    }
+
+    .ds-tabs {
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .ds-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .ds-tab {
+        flex: 0 0 auto;
+    }
+
+    .ds-ai-container {
+        padding: 18px;
+    }
+
+    .ds-ai-steps {
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
     .ds-ai-schema-grid {
         grid-template-columns: 1fr;
     }
@@ -1267,7 +1300,9 @@
     }
 
     .ds-ai-schema-actions-right {
-        flex-wrap: wrap;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .ds-ai-preview-header {
@@ -1285,11 +1320,30 @@
     .ds-ai-refine {
         flex-direction: column;
     }
+
+    .ds-ai-row-config {
+        justify-content: space-between;
+    }
+
+    .ds-ai-row-config input {
+        width: min(150px, 48vw);
+    }
+
+    .ds-empty-actions,
+    .ds-kaggle-card-actions,
+    .ds-modal-footer,
+    .ds-ai-saved-actions {
+        flex-wrap: wrap;
+    }
+
+    .ds-btn {
+        justify-content: center;
+    }
 }
 
 @media (max-width: 640px) {
     .ds-page {
-        padding: 16px 12px 60px;
+        padding: 0 0 60px;
     }
 
     .ds-header {
@@ -1303,6 +1357,7 @@
     }
 
     .ds-table {
+        min-width: 640px;
         font-size: 0.78rem;
     }
 
@@ -1322,5 +1377,39 @@
 
     .ds-ai-step-line {
         width: 24px;
+    }
+
+    .ds-search-bar {
+        flex-wrap: wrap;
+    }
+
+    .ds-search-bar input {
+        min-width: 0;
+        flex-basis: calc(100% - 28px);
+    }
+
+    .ds-categories-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+
+    .ds-ai-prompt-box textarea {
+        min-height: 130px;
+    }
+
+    .ds-ai-schema-header,
+    .ds-ai-preview-header {
+        align-items: stretch;
+    }
+
+    .ds-ai-col-count {
+        width: max-content;
+    }
+
+    .ds-toast {
+        left: 12px;
+        right: 12px;
+        bottom: 76px;
+        min-width: 0;
+        max-width: none;
     }
 }

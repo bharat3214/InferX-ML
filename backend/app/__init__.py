@@ -7,12 +7,33 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from sqlalchemy import text
 
 from .config import Config
 
 db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
+
+
+def _sync_auth_schema():
+    """Backfill auth columns for existing installs without full migrations."""
+    if db.engine.dialect.name != 'postgresql':
+        return
+
+    statements = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code_hash VARCHAR(256)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code_expires_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_sent_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_code_hash VARCHAR(256)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_code_expires_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_sent_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
+    ]
+    for statement in statements:
+        db.session.execute(text(statement))
+    db.session.commit()
 
 
 def create_app(config_class=Config):
@@ -45,5 +66,9 @@ def create_app(config_class=Config):
     @app.route('/api/health')
     def health_check():
         return {'status': 'healthy', 'service': 'InferX-ML API'}
+
+    with app.app_context():
+        db.create_all()
+        _sync_auth_schema()
     
     return app

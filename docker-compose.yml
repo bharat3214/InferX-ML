@@ -67,6 +67,7 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - KAGGLE_USERNAME=${KAGGLE_USERNAME}
       - KAGGLE_KEY=${KAGGLE_KEY:-${KAGGLE_API_TOKEN}}
+      - MAILER_URL=http://mailer:4000
     ports:
       - "5000:5000"
     volumes:
@@ -80,6 +81,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      mailer:
+        condition: service_started
 
   # Celery Worker (with GPU support if available)
   celery:
@@ -98,12 +101,29 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - KAGGLE_USERNAME=${KAGGLE_USERNAME}
       - KAGGLE_KEY=${KAGGLE_KEY:-${KAGGLE_API_TOKEN}}
+      - MAILER_URL=http://mailer:4000
     volumes:
       - ./backend:/app
       - ./ml_engine:/app/ml_engine
     depends_on:
       - backend
       - redis
+
+  mailer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mailer
+    container_name: inferx-mailer
+    environment:
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - MAILER_PRODUCT_NAME=InferX-ML
+    ports:
+      - "4000:4000"
 
   # React Frontend
   frontend:

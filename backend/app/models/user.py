@@ -18,6 +18,14 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
+    verification_code_hash = db.Column(db.String(256), nullable=True)
+    verification_code_expires_at = db.Column(db.DateTime, nullable=True)
+    verification_sent_at = db.Column(db.DateTime, nullable=True)
+    password_reset_code_hash = db.Column(db.String(256), nullable=True)
+    password_reset_code_expires_at = db.Column(db.DateTime, nullable=True)
+    password_reset_sent_at = db.Column(db.DateTime, nullable=True)
+    last_login_at = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     datasets = db.relationship('Dataset', backref='owner', lazy='dynamic')
@@ -38,7 +46,9 @@ class User(db.Model):
             'email': self.email,
             'username': self.username,
             'created_at': self.created_at.isoformat(),
-            'is_active': self.is_active
+            'is_active': self.is_active,
+            'email_verified': self.email_verified,
+            'last_login_at': self.last_login_at.isoformat() if self.last_login_at else None
         }
     
     def __repr__(self):

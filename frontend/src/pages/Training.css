@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════ */
 
 .training-page {
-    width: 90%;
+    width: min(100%, 1280px);
     margin: 0 auto;
     height: calc(100vh - 64px);
     display: flex;
@@ -69,7 +69,7 @@
    ═══════════════════════════════════ */
 .training-layout {
     display: grid;
-    grid-template-columns: 380px 1fr;
+    grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
     flex: 1;
     overflow: hidden;
 }
@@ -583,11 +583,31 @@
 @media (max-width: 900px) {
     .training-page {
         height: auto;
+        min-height: 100%;
         overflow: auto;
+        width: 100%;
+    }
+
+    .training-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: var(--space-3);
+        padding: var(--space-3);
+    }
+
+    .training-header .header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .training-header .header-actions .btn {
+        flex: 1;
+        min-width: 140px;
     }
 
     .training-layout {
         grid-template-columns: 1fr;
+        overflow: visible;
     }
 
     .panel-left {
@@ -606,6 +626,86 @@
 
     .terminal-content {
         max-height: 200px;
+    }
+
+    .ai-input-row {
+        flex-direction: column;
+    }
+
+    .ai-analyze-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .graphs-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ensemble-action-banner,
+    .result-summary,
+    .lb-info {
+        align-items: stretch;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .lb-metrics {
+        text-align: left;
+    }
+}
+
+@media (max-width: 640px) {
+    .training-page {
+        height: auto;
+    }
+
+    .training-header h1 {
+        font-size: 1rem;
+    }
+
+    .panel-header,
+    .model-progress-content,
+    .image-classes-panel,
+    .leaderboard-section {
+        padding: var(--space-3);
+    }
+
+    .panel-left .form-group,
+    .ai-section,
+    .header-fix-panel,
+    .training-start-error {
+        margin-left: 0;
+        margin-right: 0;
+        padding-left: var(--space-3);
+        padding-right: var(--space-3);
+    }
+
+    .pipeline-steps {
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: var(--space-2);
+    }
+
+    .pipeline-step {
+        min-width: 72px;
+    }
+
+    .pipeline-line {
+        min-width: 28px;
+    }
+
+    .leaderboard-card {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .raw-preview {
+        max-width: 100%;
+    }
+
+    .header-input-grid {
+        max-height: none;
     }
 }
 
