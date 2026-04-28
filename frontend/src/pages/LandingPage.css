@@ -172,39 +172,124 @@
     }
 }
 
-/* ContainerScroll overrides */
-.scroll-header {
+/* Hero Split Layout — Text Left, Terminal Right */
+.hero-split {
+    position: relative;
+    z-index: 1;
     width: 80%;
     max-width: none;
     margin: 0 auto;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    gap: 3rem;
+    padding: 5rem 0 4rem;
+    min-height: calc(100vh - 72px);
 }
 
-.scroll-card {
-    width: 80%;
-    max-width: none;
-    margin: -1.25rem auto 0;
-    border: 1.5px solid rgba(52, 211, 153, 0.12);
-    padding: 4px;
-    background: #111113;
-    border-radius: 20px;
-}
-
-.scroll-card-inner {
-    height: 100%;
-    width: 100%;
-    overflow: hidden;
-    border-radius: 16px;
-    background: #0c0c0f;
-}
-
-/* Hero Text */
+/* Hero Text — Left aligned */
 .hero-text {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.6rem;
-    padding-bottom: 1rem;
+}
+
+.hero-text-left {
+    flex: 1 1 50%;
+    text-align: left;
+}
+
+/* Floating ML Icons */
+.hero-float-icon {
+    position: absolute;
+    z-index: 1;
+    color: rgba(52, 211, 153, 0.3);
+    pointer-events: none;
+    filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.15));
+}
+
+/* Title accent — white line after gradient */
+.hero-title-accent {
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 600;
+}
+
+/* Hero Stats Bar */
+.hero-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 2rem;
+    padding: 1rem 1.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    backdrop-filter: blur(8px);
+    width: fit-content;
+}
+
+.hero-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.stat-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #34d399;
+    letter-spacing: -0.02em;
+}
+
+.stat-label {
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+}
+
+.hero-stat-divider {
+    width: 1px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+/* Terminal Card — Right */
+@keyframes terminal-float {
+    0%, 100% { transform: translateY(0px); }
+    50%      { transform: translateY(-14px); }
+}
+
+.hero-terminal-wrap {
+    flex: 1 1 50%;
+    border: 1.5px solid rgba(52, 211, 153, 0.12);
+    border-radius: 20px;
+    background: #111113;
+    padding: 4px;
+    box-shadow:
+        0 0 40px rgba(16, 185, 129, 0.06),
+        0 20px 60px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    cursor: grab;
+    animation: terminal-float 4s ease-in-out infinite;
+    transition: box-shadow 0.35s ease, border-color 0.35s ease;
+    will-change: transform;
+}
+
+.hero-terminal-wrap:hover {
+    animation-play-state: paused;
+    border-color: rgba(52, 211, 153, 0.28);
+    box-shadow:
+        0 0 60px rgba(16, 185, 129, 0.12),
+        0 25px 70px rgba(0, 0, 0, 0.45),
+        0 0 100px rgba(52, 211, 153, 0.04);
+}
+
+.hero-terminal-wrap .hero-dashboard-mock {
+    border-radius: 16px;
+    background: #0c0c0f;
+    overflow: hidden;
 }
 
 .hero-badge {
@@ -952,11 +1037,20 @@
         padding-top: 72px;
     }
 
-    .scroll-header {
-        width: 100%;
+    .hero-split {
+        flex-direction: column;
+        width: 90%;
+        padding: 3rem 0 2rem;
+        min-height: auto;
+        gap: 2rem;
     }
 
-    .scroll-card {
+    .hero-text-left {
+        text-align: center;
+        align-items: center;
+    }
+
+    .hero-terminal-wrap {
         width: 100%;
     }
 
@@ -1123,14 +1217,15 @@
         font-size: 0.88rem;
     }
 
-    .scroll-card {
-        margin-top: -0.5rem;
-        border-radius: 16px;
-        padding: 3px;
+    .hero-split {
+        width: 92%;
+        padding: 2rem 0 1.5rem;
+        gap: 1.5rem;
     }
 
-    .scroll-card-inner {
-        border-radius: 12px;
+    .hero-terminal-wrap {
+        border-radius: 16px;
+        padding: 3px;
     }
 
     .hero-dashboard-mock {
@@ -1163,12 +1258,26 @@
         flex-direction: column;
         width: 100%;
         padding: 0 0.75rem;
-        margin-bottom: 2rem;
+        margin-bottom: 1rem;
+    }
+
+    .hero-stats {
+        width: 100%;
+        justify-content: center;
+        padding: 0.75rem 1rem;
+        gap: 0.75rem;
+    }
+
+    .stat-value {
+        font-size: 1rem;
+    }
+
+    .hero-float-icon {
+        display: none;
     }
 
     .features-section {
         padding-top: 6rem;
-    }
     }
 }
 
