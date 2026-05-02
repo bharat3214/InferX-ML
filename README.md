@@ -1,5 +1,3 @@
-
-
 # InferX ML
 
 ## Overview
@@ -16,9 +14,9 @@ The platform is built entirely on **open-source technologies**, including **Stre
 
 * 🚀 **No-code, user-friendly ML workflow**
 * 📊 **Supports tabular (CSV/Excel), time-series, and image datasets**
-* ⚙️ **AI-powered goal analysis** (Groq/Gemini integration)\r
-* ⚖️ **Automated Data Auto-Balancing** (Detects skewed classes and applies SMOTE synthetic generation)\r
-* ⚙️ **Automated data profiling, preprocessing, and model training**\r
+* ⚙️ **AI-powered goal analysis** (Groq/Gemini integration)
+* ⚖️ **Automated Data Auto-Balancing** (Detects skewed classes and applies SMOTE synthetic generation)
+* ⚙️ **Automated data profiling, preprocessing, and model training**
 * 📈 **Built-in model evaluation and explainability**
 * 🧩 **Open-source, lightweight, and scalable-by-design**
 
@@ -32,7 +30,6 @@ The platform is built entirely on **open-source technologies**, including **Stre
 ┌────────────────────────────────────────────┐
 │              User Browser                  │
 └───────────────┬───────────────┬────────────┘
-                │               │
                 │               │
                 ▼               ▼
 ┌────────────────────────┐  ┌────────────────────────┐
@@ -50,27 +47,25 @@ The platform is built entirely on **open-source technologies**, including **Stre
 │          (Core Orchestrator API)           │
 │                                            │
 │ • Auth & user management                   │
-│ • Dataset registration                    │
-│ • AutoML workflow control                 │
-│ • Prediction orchestration                │
+│ • Dataset registration                     │
+│ • AutoML workflow control                  │
+│ • Prediction orchestration                 │
 └───────────────┬───────────────┬────────────┘
-                │               │
                 │               │
                 ▼               ▼
 ┌────────────────────────┐  ┌────────────────────────┐
-│      PostgreSQL        │  │        MinIO            │
-│   (Metadata Store)    │  │  (Object Storage)       │
+│      PostgreSQL        │  │        MinIO           │
+│   (Metadata Store)     │  │  (Object Storage)      │
 │                        │  │                        │
 │ • Users                │  │ • Raw datasets         │
 │ • Experiments          │  │ • Processed data       │
 │ • Job status           │  │ • Trained models       │
 │ • Configs              │  │ • Pipelines            │
 └────────────────────────┘  │ • Metrics & artifacts  │
-                              └────────────────────────┘
-
-
+                             └────────────────────────┘
 ```
 
+---
 
 # 🔄 Flow Summary
 
@@ -138,7 +133,9 @@ docker-compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
 
 #### Advanced: Manual Builds
+
 You can also build individual images with custom arguments:
+
 ```bash
 # Build backend for GPU manually
 docker build -t inferx-backend-gpu \
@@ -305,8 +302,8 @@ Password: demo123
 | `MINIO_ENDPOINT` | MinIO server | localhost:9000 |
 | `MINIO_ACCESS_KEY` | MinIO access key | minioadmin |
 | `MINIO_SECRET_KEY` | MinIO secret key | minioadmin |
-| `JWT_SECRET_KEY` | JWT signing key | your-jwt-secret-key |\r
-| `GROQ_API_KEY` | Groq API key for AI analysis | *(required for AI features)* |\r
+| `JWT_SECRET_KEY` | JWT signing key | your-jwt-secret-key |
+| `GROQ_API_KEY` | Groq API key for AI analysis | *(required for AI features)* |
 | `GEMINI_API_KEY` | Google Gemini API key (alternative) | *(optional)* |
 
 ---
@@ -356,7 +353,3 @@ This project is licensed under the MIT License.
 ## 🙋 Support
 
 For issues or questions, please open an issue on GitHub.
-
-#   H a c k a t h o n - A H 
- 
- 
