@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from app import db
 from app.models.dataset import Dataset
 from app.models.experiment import Experiment, TrainingJob
+from app.models.user import User
 import io
 import json
 import re
@@ -427,6 +428,16 @@ def list_datasets():
 def upload_dataset():
     """Upload a new dataset"""
     user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+        
+    if user.plan_type == 'free':
+        dataset_count = Dataset.query.filter_by(user_id=user_id).count()
+        if dataset_count >= 3:
+            return jsonify({'error': 'Free plan limit reached (3 datasets max). Upgrade to Pro for unlimited datasets.'}), 403
+    
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -591,6 +602,14 @@ def upload_dataset():
             dataset.profile_status = 'failed'
             db.session.commit()
     
+    
+    # Send dataset upload notification
+    try:
+        from app.services.notification_service import notify_dataset_uploaded
+        notify_dataset_uploaded(user, name)
+    except Exception as notify_err:
+        print(f'[notify] dataset_uploaded dispatch error: {notify_err}', flush=True)
+
     return jsonify({
         'message': 'Dataset uploaded successfully',
         'dataset': dataset.to_dict()
@@ -1002,26 +1021,28 @@ def _get_kaggle_api():
 @datasets_bp.route('/kaggle/search', methods=['GET'])
 @jwt_required()
 def kaggle_search():
-    """Search Kaggle datasets by query string.
-
-    Query params:
-        q   – search term (required)
-        page – result page (optional, default 1)
-    """
-    query = request.args.get('q', '').strip()
+    """Search Kaggle datasets by query string."""
+    query = request.args.get('query', '').strip()
     if not query:
-        return jsonify({'error': 'Query parameter "q" is required'}), 400
+        return jsonify({'error': 'Search query is required'}), 400
 
-    page = int(request.args.get('page', 1))
+    user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
 
     try:
         api = _get_kaggle_api()
-        results = api.dataset_list(search=query, page=page)
+        # Search datasets
+        datasets = api.dataset_list(search=query, max_size=1000000)
     except Exception as e:
         return jsonify({'error': f'Kaggle API error: {str(e)}'}), 502
 
-    datasets_out = []
-    for ds in results:
+    is_limited = False
+    if user and user.plan_type == 'free':
+        datasets = datasets[:5]
+        is_limited = True
+
+    results = []
+    for ds in datasets:
         # ds is a dict-like object from kaggle SDK
         ref = ds.ref if hasattr(ds, 'ref') else (ds.get('ref') if isinstance(ds, dict) else str(ds))
         title = ds.title if hasattr(ds, 'title') else (ds.get('title') if isinstance(ds, dict) else ref)
@@ -1032,7 +1053,7 @@ def kaggle_search():
         last_updated = ds.lastUpdated if hasattr(ds, 'lastUpdated') else (ds.get('lastUpdated') if isinstance(ds, dict) else '')
         usability = ds.usabilityRating if hasattr(ds, 'usabilityRating') else (ds.get('usabilityRating') if isinstance(ds, dict) else 0)
 
-        datasets_out.append({
+        results.append({
             'ref': ref,
             'title': title,
             'subtitle': subtitle or '',
@@ -1044,7 +1065,11 @@ def kaggle_search():
             'url': f'https://www.kaggle.com/datasets/{ref}',
         })
 
-    return jsonify({'datasets': datasets_out, 'query': query, 'page': page}), 200
+    return jsonify({
+        'query': query,
+        'is_limited': is_limited,
+        'results': results
+    }), 200
 
 
 @datasets_bp.route('/kaggle/download', methods=['POST'])
@@ -1391,6 +1416,13 @@ def generate_synthetic():
     from datetime import datetime, timedelta
 
     user_id = int(get_jwt_identity())
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    if user.plan_type == 'free':
+        return jsonify({'error': 'Synthetic data generation is locked on the Free tier. Please upgrade.'}), 403
+
     data = request.get_json()
 
     name = data.get('name', 'synthetic_data').strip()

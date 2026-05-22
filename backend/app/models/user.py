@@ -27,6 +27,12 @@ class User(db.Model):
     password_reset_sent_at = db.Column(db.DateTime, nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)
     
+    # Billing & Plan
+    plan_type = db.Column(db.String(20), server_default='free', nullable=False)
+    plan_expires_at = db.Column(db.DateTime, nullable=True)
+    razorpay_customer_id = db.Column(db.String(100), nullable=True)
+    razorpay_subscription_id = db.Column(db.String(100), nullable=True)
+    
     # Relationships
     datasets = db.relationship('Dataset', backref='owner', lazy='dynamic')
     experiments = db.relationship('Experiment', backref='owner', lazy='dynamic')
@@ -39,6 +45,15 @@ class User(db.Model):
         """Check password against hash"""
         return check_password_hash(self.password_hash, password)
     
+    @property
+    def is_pro_active(self):
+        """Check if user has an active paid subscription (Pro or Advance)."""
+        if self.plan_type not in ('pro', 'advance'):
+            return False
+        if self.plan_expires_at and self.plan_expires_at < datetime.utcnow():
+            return False
+        return True
+    
     def to_dict(self):
         """Serialize to dictionary"""
         return {
@@ -48,7 +63,10 @@ class User(db.Model):
             'created_at': self.created_at.isoformat(),
             'is_active': self.is_active,
             'email_verified': self.email_verified,
-            'last_login_at': self.last_login_at.isoformat() if self.last_login_at else None
+            'last_login_at': self.last_login_at.isoformat() if self.last_login_at else None,
+            'plan_type': self.plan_type,
+            'plan_expires_at': self.plan_expires_at.isoformat() if self.plan_expires_at else None,
+            'is_pro_active': self.is_pro_active,
         }
     
     def __repr__(self):

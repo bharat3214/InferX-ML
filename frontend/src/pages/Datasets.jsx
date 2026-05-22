@@ -6,8 +6,9 @@ import {
     FileText, ChevronDown, ExternalLink, Loader2,
     FolderUp, CheckCircle, AlertCircle, Info, ArrowRight,
     Wand2, Plus, Minus, Sparkles, Eye, Save, RotateCcw,
-    MessageSquare, Table, RefreshCw
+    MessageSquare, Table, RefreshCw, Lock
 } from 'lucide-react'
+import { useAuthStore } from '../store/authStore'
 import './Datasets.css'
 
 /* ─── helpers ─── */
@@ -45,6 +46,8 @@ const KAG_CATEGORIES = [
 export default function Datasets() {
     const queryClient = useQueryClient()
     const fileInputRef = useRef(null)
+    const { user } = useAuthStore()
+    const isFree = !user?.plan_type || user.plan_type === 'free'
 
     /* ── local state ── */
     const [activeTab, setActiveTab] = useState('library')   // library | search | generate
@@ -81,7 +84,8 @@ export default function Datasets() {
         queryFn: () => datasetsApi.searchKaggle(kaggleSearchTerm),
         enabled: !!kaggleSearchTerm,
     })
-    const kaggleResults = kaggleRes?.data?.datasets || []
+    const kaggleResults = kaggleRes?.data?.results || kaggleRes?.data?.datasets || []
+    const kaggleIsLimited = kaggleRes?.data?.is_limited || false
 
     /* ── mutations ── */
     const showToast = (type, message) => {
@@ -362,8 +366,16 @@ export default function Datasets() {
                                 <p>Try a different search term.</p>
                             </div>
                         ) : kaggleResults.length > 0 ? (
-                            <div className="ds-kaggle-grid">
-                                {kaggleResults.map((ds) => (
+                            <div className="ds-kaggle-grid-wrapper">
+                                {kaggleIsLimited && (
+                                    <div className="ds-limit-banner">
+                                        <Info size={16} />
+                                        <span>Showing top 5 results on the <strong>Free Tier</strong>. Upgrade to see all results.</span>
+                                        <button className="ds-btn ds-btn-secondary ds-btn-sm" onClick={() => window.location.href='/pricing'}>Upgrade</button>
+                                    </div>
+                                )}
+                                <div className="ds-kaggle-grid">
+                                    {kaggleResults.map((ds) => (
                                     <div key={ds.ref} className="ds-kaggle-card">
                                         <div className="ds-kaggle-card-body">
                                             <h3 className="ds-kaggle-title">{ds.title}</h3>
@@ -390,6 +402,7 @@ export default function Datasets() {
                                         </div>
                                     </div>
                                 ))}
+                                </div>
                             </div>
                         ) : (
                             <div className="ds-search-hint">
@@ -419,6 +432,16 @@ export default function Datasets() {
             {/* ════════ AI GENERATE TAB ════════ */}
             {activeTab === 'generate' && (
                 <section className="ds-section">
+                    {isFree ? (
+                        <div className="ds-empty">
+                            <Lock size={48} style={{ color: 'var(--text-muted)' }} />
+                            <h3>Data Generation Locked</h3>
+                            <p>Synthetic AI data generation is only available on Pro and Advance tiers.</p>
+                            <button className="ds-btn ds-btn-primary" onClick={() => window.location.href='/pricing'}>
+                                Upgrade Plan
+                            </button>
+                        </div>
+                    ) : (
                     <div className="ds-ai-container">
                         {/* ── Step Indicator ── */}
                         <div className="ds-ai-steps">
@@ -645,6 +668,7 @@ export default function Datasets() {
                             </div>
                         )}
                     </div>
+                    )}
                 </section>
             )}
 
