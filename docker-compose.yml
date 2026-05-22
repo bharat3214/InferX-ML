@@ -68,6 +68,12 @@ services:
       - KAGGLE_USERNAME=${KAGGLE_USERNAME}
       - KAGGLE_KEY=${KAGGLE_KEY:-${KAGGLE_API_TOKEN}}
       - MAILER_URL=http://mailer:4000
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "5000:5000"
     volumes:
@@ -102,12 +108,32 @@ services:
       - KAGGLE_USERNAME=${KAGGLE_USERNAME}
       - KAGGLE_KEY=${KAGGLE_KEY:-${KAGGLE_API_TOKEN}}
       - MAILER_URL=http://mailer:4000
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
       - ./ml_engine:/app/ml_engine
     depends_on:
       - backend
       - redis
+
+  # Celery Beat Scheduler (cron jobs)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: inferx-celery-beat
+    command: celery -A app.celery_app.celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/inferx_ml
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+      - celery
 
   mailer:
     build:

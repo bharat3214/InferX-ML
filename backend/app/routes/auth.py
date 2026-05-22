@@ -12,7 +12,7 @@ from flask_jwt_extended import (
     get_jwt_identity
 )
 from werkzeug.security import check_password_hash, generate_password_hash
-from app import db
+from app import db, limiter
 from app.models.user import User
 from app.services.mailer_service import MailerError, mailer_service
 
@@ -104,6 +104,8 @@ def _issue_auth_payload(user):
 
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit("3 per minute")  # Stricter for registrations
+
 def register():
     """Register a new user"""
     data = request.get_json()
@@ -154,6 +156,7 @@ def register():
 
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
     """Login user and return tokens"""
     data = request.get_json()
@@ -188,6 +191,8 @@ def login():
 
 
 @auth_bp.route('/verify-email', methods=['POST'])
+@limiter.limit("10 per minute")
+
 def verify_email():
     data = request.get_json() or {}
     email = _normalize_email(data.get('email'))
@@ -222,6 +227,7 @@ def verify_email():
 
 
 @auth_bp.route('/resend-verification', methods=['POST'])
+@limiter.limit("3 per minute")
 def resend_verification():
     data = request.get_json() or {}
     email = _normalize_email(data.get('email'))
@@ -245,6 +251,8 @@ def resend_verification():
 
 
 @auth_bp.route('/forgot-password', methods=['POST'])
+@limiter.limit("3 per minute")  # Protect against email enumeration / spam
+
 def forgot_password():
     data = request.get_json() or {}
     email = _normalize_email(data.get('email'))
@@ -267,6 +275,8 @@ def forgot_password():
 
 
 @auth_bp.route('/reset-password', methods=['POST'])
+@limiter.limit("3 per minute")
+
 def reset_password():
     data = request.get_json() or {}
     email = _normalize_email(data.get('email'))
@@ -300,6 +310,37 @@ def reset_password():
     db.session.commit()
 
     return jsonify({'message': 'Password updated successfully'}), 200
+
+
+@auth_bp.route('/change-password', methods=['POST'])
+@jwt_required()
+@limiter.limit("5 per minute")
+
+def change_password():
+    """Change password for the currently authenticated user."""
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    data = request.get_json() or {}
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+
+    if not all([current_password, new_password]):
+        return jsonify({'error': 'Current password and new password are required'}), 400
+
+    if not user.check_password(current_password):
+        return jsonify({'error': 'Current password is incorrect'}), 401
+
+    password_error = _password_error(new_password)
+    if password_error:
+        return jsonify({'error': password_error}), 400
+
+    user.set_password(new_password)
+    db.session.commit()
+
+    return jsonify({'message': 'Password changed successfully'}), 200
 
 
 @auth_bp.route('/refresh', methods=['POST'])

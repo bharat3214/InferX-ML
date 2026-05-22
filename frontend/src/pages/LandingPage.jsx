@@ -27,9 +27,15 @@ import {
     Workflow,
     TrendingUp,
     Atom,
-    Network
+    Network,
+    Crown,
+    Check,
+    X,
+    Star
 } from 'lucide-react'
 import './LandingPage.css'
+
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
 /* ═══════════════════════════════════
    Fade-in wrapper for scroll reveal
@@ -177,6 +183,15 @@ const team = [
 export default function LandingPage() {
     const navigate = useNavigate()
     const [scrolled, setScrolled] = useState(false)
+    const [billingConfig, setBillingConfig] = useState(null)
+
+    useEffect(() => {
+        // Fetch dynamic pricing from backend
+        fetch(`${API_BASE}/billing/config`)
+            .then(res => res.json())
+            .then(data => setBillingConfig(data))
+            .catch(err => console.error('Failed to fetch billing config:', err))
+    }, [])
 
     /* ═══ Mouse-tracking tilt for terminal card ═══ */
     const terminalRef = React.useRef(null)
@@ -224,6 +239,7 @@ export default function LandingPage() {
                     <div className="nav-links">
                         <button onClick={() => scrollToSection('features')} className="nav-link">Features</button>
                         <button onClick={() => scrollToSection('how-it-works')} className="nav-link">How it Works</button>
+                        <button onClick={() => scrollToSection('pricing')} className="nav-link">Pricing</button>
                     </div>
 
                     <div className="nav-actions">
@@ -455,6 +471,112 @@ export default function LandingPage() {
                             </div>
                         </FadeIn>
                     ))}
+                </div>
+            </section>
+
+            {/* ═══ PRICING ═══ */}
+            <section id="pricing" className="pricing-section">
+                <FadeIn>
+                    <div className="section-label">
+                        <Crown size={14} />
+                        <span>Pricing</span>
+                    </div>
+                    <h2 className="section-title">Simple, transparent pricing</h2>
+                    <p className="section-subtitle">Start free. Upgrade when you need more power.</p>
+                </FadeIn>
+
+                <div className="pricing-grid">
+                    {/* Free Plan */}
+                    <FadeIn delay={0.1}>
+                        <div className="pricing-card">
+                            <div className="pricing-card-header">
+                                <span className="pricing-plan-name">Free</span>
+                                <div className="pricing-price">
+                                    <span className="pricing-currency">₹</span>
+                                    <span className="pricing-amount">0</span>
+                                    <span className="pricing-period">/mo</span>
+                                </div>
+                                <p className="pricing-desc">Perfect for learning &amp; small experiments</p>
+                            </div>
+                            <ul className="pricing-features">
+                                <li><Check size={16} className="feature-check" /> 1 training per day</li>
+                                <li><Check size={16} className="feature-check" /> 4 ML algorithms</li>
+                                <li><Check size={16} className="feature-check" /> 20 API requests / min</li>
+                                <li><Check size={16} className="feature-check" /> Basic model export</li>
+                                <li className="feature-disabled"><X size={16} className="feature-x" /> XGBoost &amp; LightGBM</li>
+                                <li className="feature-disabled"><X size={16} className="feature-x" /> Advanced deep learning</li>
+                                <li className="feature-disabled"><X size={16} className="feature-x" /> Priority support</li>
+                            </ul>
+                            <div className="pricing-card-footer">
+                                <button onClick={() => navigate('/login')} className="pricing-btn pricing-btn-outline">
+                                    Get Started Free
+                                </button>
+                            </div>
+                        </div>
+                    </FadeIn>
+
+                    {/* Pro Plan */}
+                    <FadeIn delay={0.2}>
+                        <div className="pricing-card pricing-card-pro">
+                            <div className="pricing-popular-badge">
+                                <Zap size={12} />
+                                Most Popular
+                            </div>
+                            <div className="pricing-card-header">
+                                <span className="pricing-plan-name">Pro</span>
+                                <div className="pricing-price">
+                                    <span className="pricing-currency">₹</span>
+                                    <span className="pricing-amount">{billingConfig ? (billingConfig.pro_plan_amount / 100) : '499'}</span>
+                                    <span className="pricing-period">/mo</span>
+                                </div>
+                                <p className="pricing-desc">For serious practitioners &amp; production use</p>
+                            </div>
+                            <ul className="pricing-features">
+                                <li><Check size={16} className="feature-check pro" /> Unlimited training jobs</li>
+                                <li><Check size={16} className="feature-check pro" /> 10+ ML algorithms</li>
+                                <li><Check size={16} className="feature-check pro" /> 200 API requests / min</li>
+                                <li><Check size={16} className="feature-check pro" /> Advanced model export</li>
+                                <li><Check size={16} className="feature-check pro" /> XGBoost &amp; LightGBM</li>
+                                <li><Check size={16} className="feature-check pro" /> YOLOv8 deep learning</li>
+                                <li><Check size={16} className="feature-check pro" /> Priority support</li>
+                            </ul>
+                            <div className="pricing-card-footer">
+                                <button onClick={() => navigate('/login')} className="pricing-btn pricing-btn-primary">
+                                    <Crown size={16} />
+                                    Upgrade to Pro
+                                </button>
+                            </div>
+                        </div>
+                    </FadeIn>
+
+                    {/* Advance Plan */}
+                    <FadeIn delay={0.3}>
+                        <div className="pricing-card pricing-card-advance" style={{ borderColor: '#8b5cf6', boxShadow: '0 0 40px -10px rgba(139, 92, 246, 0.15)', background: 'linear-gradient(to bottom, rgba(30, 30, 40, 0.8), rgba(20, 20, 28, 0.9))' }}>
+                            <div className="pricing-card-header">
+                                <span className="pricing-plan-name" style={{ color: '#8b5cf6' }}>Advance</span>
+                                <div className="pricing-price">
+                                    <span className="pricing-currency">₹</span>
+                                    <span className="pricing-amount">{billingConfig ? (billingConfig.advance_plan_amount / 100) : '4999'}</span>
+                                    <span className="pricing-period">/yr</span>
+                                </div>
+                                <p className="pricing-desc">Best value for long-term production workloads</p>
+                            </div>
+                            <ul className="pricing-features">
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Everything in Pro</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> 1 Year Full Access</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Priority API access</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Early access features</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Dedicated support</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Custom integrations</li>
+                            </ul>
+                            <div className="pricing-card-footer">
+                                <button onClick={() => navigate('/login')} className="pricing-btn pricing-btn-primary" style={{ background: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', boxShadow: '0 8px 20px -8px rgba(139, 92, 246, 0.5)' }}>
+                                    <Star size={16} />
+                                    Get Advance Plan
+                                </button>
+                            </div>
+                        </div>
+                    </FadeIn>
                 </div>
             </section>
 
