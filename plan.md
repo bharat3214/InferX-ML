@@ -494,13 +494,3 @@ InferX-ML/
 ---
 
 *Last Updated: January 10, 2026*
-
-
-
-tomorrow 
-
-build the docker image again
-
-ollama pull llama3.2
-
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build

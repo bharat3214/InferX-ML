@@ -22,17 +22,9 @@ from flask_limiter.util import get_remote_address
 
 def _get_real_ip():
     """
-    Resolve the real client IP, respecting reverse proxy headers.
-    Priority: X-Forwarded-For → X-Real-Ip → remote_addr
-    This fixes P0-5: behind Nginx/CloudFlare all clients shared one IP.
+    Resolve the real client IP.
+    Trusts the ProxyFix middleware to handle proxy headers securely.
     """
-    forwarded = flask_request.headers.get('X-Forwarded-For', '')
-    if forwarded:
-        # X-Forwarded-For is comma-separated; first entry is the real client
-        return forwarded.split(',')[0].strip()
-    real_ip = flask_request.headers.get('X-Real-Ip', '')
-    if real_ip:
-        return real_ip.strip()
     return get_remote_address()
 
 
@@ -43,8 +35,8 @@ def get_user_rate_limit():
         # Check if a valid JWT is present without enforcing it
         verify_jwt_in_request(optional=True)
         user_id = get_jwt_identity()
-        if user_id:
-            user = User.query.get(user_id)
+        if user_id is not None:
+            user = User.query.get(int(user_id))
             if user and user.plan_type in ('pro', 'advance'):
                 return "200 per minute"
     except Exception:
@@ -62,7 +54,8 @@ limiter = Limiter(
 
 @limiter.request_filter
 def header_whitelist():
-    return flask_request.headers.get("X-Internal-Service") == "true"
+    internal_key = os.environ.get("INTERNAL_API_KEY")
+    return bool(internal_key) and flask_request.headers.get("X-Internal-Service") == internal_key
 
 
 def _sync_billing_schema():
@@ -71,7 +64,10 @@ def _sync_billing_schema():
         return
 
     statements = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_type VARCHAR(20) NOT NULL DEFAULT 'free'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS razorpay_customer_id VARCHAR(100)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS razorpay_subscription_id VARCHAR(100)",
     ]
     for statement in statements:
         db.session.execute(text(statement))
@@ -136,8 +132,8 @@ def _register_rate_limit_error_handler(app):
 
             verify_jwt_in_request(optional=True)
             user_id = get_jwt_identity()
-            if user_id:
-                user = User.query.get(user_id)
+            if user_id is not None:
+                user = User.query.get(int(user_id))
                 if user:
                     notify_rate_limit_warning(user, "Exceeded", str(e.description))
         except Exception:
@@ -154,6 +150,9 @@ def create_app(config_class=Config):
     """Application factory pattern"""
     app = Flask(__name__)
     app.config.from_object(config_class)
+    
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     
     # Initialize extensions
     db.init_app(app)

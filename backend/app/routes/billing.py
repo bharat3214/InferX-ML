@@ -247,7 +247,6 @@ def verify_payment():
         user.plan_type = plan_to_grant
         duration = ADVANCE_PLAN_DURATION_DAYS if plan_to_grant == 'advance' else PRO_PLAN_DURATION_DAYS
         user.plan_expires_at = base_date + timedelta(days=duration)
-        user.razorpay_customer_id = razorpay_payment_id
         db.session.commit()
 
         # P1-3: Notify user of renewal/extension
@@ -365,7 +364,6 @@ def razorpay_webhook():
                 user.plan_type = plan_granted
                 duration = ADVANCE_PLAN_DURATION_DAYS if plan_granted == 'advance' else PRO_PLAN_DURATION_DAYS
                 user.plan_expires_at = base_date + timedelta(days=duration)
-                user.razorpay_customer_id = razorpay_payment_id
 
         db.session.commit()
 
