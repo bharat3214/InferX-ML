@@ -52,6 +52,126 @@ function renderTemplate(type, payload = {}) {
         }
     }
 
+    if (type === 'training_completed') {
+        return {
+            subject: `✅ Training complete — ${payload.experiment_name || 'Your model'}`,
+            html: `
+                <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+                    <h2 style="margin-bottom: 12px;">Training Completed 🎉</h2>
+                    <p style="margin-bottom: 20px;">Hi ${payload.username || 'there'}, your model <strong>${payload.experiment_name || ''}</strong> has finished training successfully.</p>
+                    <div style="padding: 16px 20px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 0; font-weight: 600; color: #065f46;">Ready to use</p>
+                        <p style="margin: 4px 0 0; color: #047857; font-size: 14px;">Head to the Models page to view metrics, download, or start making predictions.</p>
+                    </div>
+                    <p style="color: #6b7280; font-size: 13px;">You can manage notification preferences in Settings → Notifications.</p>
+                </div>
+            `,
+        }
+    }
+
+    if (type === 'training_failed') {
+        return {
+            subject: `❌ Training failed — ${payload.experiment_name || 'Your model'}`,
+            html: `
+                <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+                    <h2 style="margin-bottom: 12px;">Training Failed</h2>
+                    <p style="margin-bottom: 20px;">Hi ${payload.username || 'there'}, the training job for <strong>${payload.experiment_name || ''}</strong> encountered an error.</p>
+                    <div style="padding: 16px 20px; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 0; font-weight: 600; color: #991b1b;">Error Details</p>
+                        <p style="margin: 4px 0 0; color: #b91c1c; font-size: 14px; word-break: break-word;">${payload.error_message || 'An unexpected error occurred.'}</p>
+                    </div>
+                    <p style="color: #6b7280; font-size: 13px;">Check the training logs for more details, or try adjusting your configuration and retraining.</p>
+                </div>
+            `,
+        }
+    }
+
+    if (type === 'dataset_uploaded') {
+        return {
+            subject: `📂 Dataset uploaded — ${payload.dataset_name || 'New dataset'}`,
+            html: `
+                <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+                    <h2 style="margin-bottom: 12px;">Dataset Uploaded</h2>
+                    <p style="margin-bottom: 20px;">Hi ${payload.username || 'there'}, your dataset <strong>${payload.dataset_name || ''}</strong> has been uploaded and profiled successfully.</p>
+                    <div style="padding: 16px 20px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 0; font-weight: 600; color: #1e40af;">Next step</p>
+                        <p style="margin: 4px 0 0; color: #1d4ed8; font-size: 14px;">Head to the Training page to start building a model with this dataset.</p>
+                    </div>
+                    <p style="color: #6b7280; font-size: 13px;">You can manage notification preferences in Settings → Notifications.</p>
+                </div>
+            `,
+        }
+    }
+
+    if (type === 'rate_limit_warning') {
+        return {
+            subject: `⚠️ API rate limit warning — ${productName}`,
+            html: `
+                <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+                    <h2 style="margin-bottom: 12px;">Rate Limit Warning</h2>
+                    <p style="margin-bottom: 20px;">Hi ${payload.username || 'there'}, you've used <strong>${payload.current_usage || '?'}</strong> of your <strong>${payload.limit || '?'}</strong> allowed API requests.</p>
+                    <div style="padding: 16px 20px; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 0; font-weight: 600; color: #92400e;">Approaching limit</p>
+                        <p style="margin: 4px 0 0; color: #b45309; font-size: 14px;">Consider upgrading to Pro for higher rate limits, or wait for your quota to reset.</p>
+                    </div>
+                    <p style="color: #6b7280; font-size: 13px;">You can manage notification preferences in Settings → Notifications.</p>
+                </div>
+            `,
+        }
+    }
+
+    if (type === 'security_alert') {
+        return {
+            subject: `🔒 Security alert — ${payload.event_type || 'Account activity'}`,
+            html: `
+                <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+                    <h2 style="margin-bottom: 12px;">Security Alert</h2>
+                    <p style="margin-bottom: 20px;">Hi ${payload.username || 'there'}, we detected the following activity on your account:</p>
+                    <div style="padding: 16px 20px; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 0; font-weight: 600; color: #991b1b;">${payload.event_type || 'Unusual activity'}</p>
+                        <p style="margin: 4px 0 0; color: #b91c1c; font-size: 14px;">${payload.details || 'If this was you, no action is needed.'}</p>
+                    </div>
+                    <p style="color: #6b7280; font-size: 13px;">If this wasn't you, change your password immediately from Settings → Security.</p>
+                </div>
+            `,
+        }
+    }
+
+    if (type === 'subscription_expired') {
+        return {
+            subject: `⏰ Your ${productName} Pro plan has expired`,
+            html: `
+                <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+                    <h2 style="margin-bottom: 12px;">Pro Plan Expired</h2>
+                    <p style="margin-bottom: 20px;">Hi ${payload.username || 'there'}, your Pro subscription expired on <strong>${payload.expiry_date || 'recently'}</strong>.</p>
+                    <div style="padding: 16px 20px; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 0; font-weight: 600; color: #92400e;">Your account has been moved to the Free plan</p>
+                        <p style="margin: 4px 0 0; color: #b45309; font-size: 14px;">Training limits and algorithm access have been reduced. Renew anytime to restore full Pro features.</p>
+                    </div>
+                    <a href="${process.env.APP_URL || 'http://localhost:3000'}/pricing" style="display: inline-block; padding: 12px 24px; background: #10b981; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600;">Renew Pro Plan</a>
+                    <p style="color: #6b7280; font-size: 13px; margin-top: 20px;">You can manage notification preferences in Settings → Notifications.</p>
+                </div>
+            `,
+        }
+    }
+
+    if (type === 'subscription_renewed') {
+        return {
+            subject: `✅ ${productName} Pro plan renewed successfully`,
+            html: `
+                <div style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+                    <h2 style="margin-bottom: 12px;">Pro Plan Renewed 🎉</h2>
+                    <p style="margin-bottom: 20px;">Hi ${payload.username || 'there'}, your Pro subscription has been renewed successfully.</p>
+                    <div style="padding: 16px 20px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 0; font-weight: 600; color: #065f46;">Plan: ${(payload.plan_name || 'pro').charAt(0).toUpperCase() + (payload.plan_name || 'pro').slice(1)}</p>
+                        <p style="margin: 4px 0 0; color: #047857; font-size: 14px;">Valid until <strong>${payload.new_expiry_date || '—'}</strong>. Enjoy unlimited training, all algorithms, and priority support.</p>
+                    </div>
+                    <p style="color: #6b7280; font-size: 13px;">You can manage notification preferences in Settings → Notifications.</p>
+                </div>
+            `,
+        }
+    }
+
     throw new Error('Unsupported email template')
 }
 
