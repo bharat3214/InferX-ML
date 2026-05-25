@@ -1,12 +1,14 @@
 """
-AI Service (Groq-powered)
-Integrates with Groq API for intelligent dataset analysis and report generation
+AI Service (Groq → Gemini → Ollama)
+Integrates with cloud LLMs and falls back to a local Ollama instance
+when the network is unavailable, API keys are exhausted, or rate limits hit.
 """
 import os
 import json
 import time
 import logging
 from typing import Dict, Any, List, Optional
+from urllib import request as urllib_request, error as urllib_error
 
 try:
     from groq import Groq
@@ -16,15 +18,25 @@ except ImportError:
 
 class AIService:
     """
-    Service for interacting with Groq API (or fallback to Gemini).
+    Service for interacting with LLMs using a resilient fallback chain:
+        1. Groq (cloud, fast)
+        2. Gemini (cloud, Google)
+        3. Ollama (local, offline-capable)
+
     Used for:
-    1. Analyzing datasets with natural language prompts to suggest target columns
-    2. Generating order reports based on predictions
-    3. AI-powered synthetic dataset generation
+    - Analyzing datasets with natural language prompts to suggest target columns
+    - Generating order reports based on predictions
+    - AI-powered synthetic dataset generation
     """
 
+    # Errors that should trigger a provider fallback
+    _FALLBACK_SIGNALS = ('429', 'rate_limit', 'quota', 'timeout', 'connection',
+                         'unreachable', 'refused', 'network', 'unavailable',
+                         'exhausted', 'limit exceeded', 'apiconnection',
+                         'no api key', 'invalid api key', 'authentication')
+
     def __init__(self):
-        # Try Groq first, then Gemini
+        # Cloud credentials
         self.groq_key = os.environ.get('GROQ_API_KEY')
         self.gemini_key = os.environ.get('GEMINI_API_KEY')
 
@@ -32,108 +44,182 @@ class AIService:
         self.provider = None
         self.gemini_model = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash')
 
+        # Ollama configuration (local fallback)
+        self.ollama_url = os.environ.get('OLLAMA_URL', 'http://host.docker.internal:11434')
+        self.ollama_model = os.environ.get('OLLAMA_MODEL', 'llama3.2')
+        self._ollama_available = None  # lazy-checked
+
+        # --- Attempt cloud providers first ---
         if self.groq_key and Groq:
             self.client = Groq(api_key=self.groq_key)
             self.provider = 'groq'
-            self.model = 'llama-3.3-70b-versatile'  # Fast and capable
-            print("Using Groq API for AI analysis")
+            self.model = 'llama-3.3-70b-versatile'
+            print("✅ Using Groq API for AI analysis")
         elif self.gemini_key:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=self.gemini_key)
                 self.client = genai.GenerativeModel(self.gemini_model)
                 self.provider = 'gemini'
-                print("Using Gemini API for AI analysis")
+                print("✅ Using Gemini API for AI analysis")
             except Exception as e:
-                print(f"Failed to initialize Gemini: {e}")
+                print(f"⚠️ Failed to initialize Gemini: {e}")
 
+        # If no cloud provider available, try Ollama as primary
         if not self.client:
-            raise ValueError("No AI API key configured. Set GROQ_API_KEY or GEMINI_API_KEY")
+            if self._check_ollama():
+                self.provider = 'ollama'
+                print(f"✅ Using local Ollama ({self.ollama_model}) for AI analysis — no cloud API keys found")
+            else:
+                print("⚠️ No AI provider available. Set GROQ_API_KEY, GEMINI_API_KEY, or run Ollama locally.")
+                print("   AI features will return fallback results.")
+
+    def _check_ollama(self) -> bool:
+        """Check if Ollama is reachable."""
+        if self._ollama_available is not None:
+            return self._ollama_available
+        try:
+            req = urllib_request.Request(f'{self.ollama_url}/api/tags', method='GET')
+            with urllib_request.urlopen(req, timeout=3) as resp:
+                self._ollama_available = resp.status == 200
+        except Exception:
+            self._ollama_available = False
+        return self._ollama_available
+
+    def _is_fallback_error(self, error_msg: str) -> bool:
+        """Check if an error should trigger provider fallback."""
+        error_lower = error_msg.lower()
+        return any(sig in error_lower for sig in self._FALLBACK_SIGNALS)
+
+    def _call_ollama(self, system_prompt: str, user_message: str) -> str:
+        """Call local Ollama instance via its HTTP API."""
+        payload = json.dumps({
+            'model': self.ollama_model,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_message}
+            ],
+            'stream': False,
+            'options': {
+                'temperature': 0.3,
+                'num_predict': 4000,
+            }
+        }).encode('utf-8')
+
+        req = urllib_request.Request(
+            f'{self.ollama_url}/api/chat',
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+
+        try:
+            with urllib_request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                content = data.get('message', {}).get('content', '')
+                if not content:
+                    raise ValueError('Ollama returned an empty response')
+                return content
+        except urllib_error.URLError as e:
+            raise ValueError(f'Ollama unavailable at {self.ollama_url}: {e}') from e
 
     def call_llm(self, system_prompt: str, user_message: str) -> str:
-        """Call the LLM (Groq or Gemini) and return the response text"""
-        
-        # Rate limit handling configuration
-        max_retries = 3
-        retry_delay = 10  # Seconds to wait on 429/quota error
-        
-        for attempt in range(max_retries):
-            # 1. Attempt Groq if it's the provider
-            if self.provider == 'groq':
-                try:
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_message}
-                        ],
-                        temperature=0.3,
-                        max_tokens=4000
-                    )
-                    return response.choices[0].message.content
-                except Exception as e:
-                    error_msg = str(e).lower()
-                    # If Groq hits a rate limit, fallback to Gemini IMMEDIATELY if available
-                    if ('429' in error_msg or 'rate_limit' in error_msg) and self.gemini_key:
-                        print(f"⚠️ Groq rate limit hit. Automatically switching to Gemini...", flush=True)
-                        try:
-                            import google.generativeai as genai
-                            genai.configure(api_key=self.gemini_key)
-                            self.client = genai.GenerativeModel(self.gemini_model)
-                            self.provider = 'gemini'
-                            # Fall through to the next block (Gemini) in the same attempt
-                        except Exception as init_err:
-                            print(f"Failed to initialize Gemini fallback: {init_err}")
-                            raise e
-                    else:
-                        raise e
+        """Call the LLM with resilient fallback chain: Groq → Gemini → Ollama.
 
-            # 2. Attempt Gemini if it's the provider
-            if self.provider == 'gemini':
+        Automatically falls through to the next provider when:
+        - Rate limit (429) or quota exhausted
+        - Network / connection error (no internet)
+        - API key missing or invalid
+        """
+        last_error = None
+
+        # ── 1. Try Groq ──
+        if self.provider == 'groq' or (self.groq_key and Groq):
+            try:
+                if not self.client or self.provider != 'groq':
+                    self.client = Groq(api_key=self.groq_key)
+                    self.provider = 'groq'
+                response = self.client.chat.completions.create(
+                    model=self.model if hasattr(self, 'model') else 'llama-3.3-70b-versatile',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=0.3,
+                    max_tokens=4000
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                last_error = e
+                err = str(e)
+                if self._is_fallback_error(err):
+                    print(f"⚠️ Groq failed ({err[:80]}…), falling back…", flush=True)
+                else:
+                    print(f"⚠️ Groq error: {err[:120]}", flush=True)
+
+        # ── 2. Try Gemini ──
+        if self.gemini_key:
+            max_retries = 2
+            retry_delay = 10
+            for attempt in range(max_retries):
                 try:
+                    if self.provider != 'gemini':
+                        import google.generativeai as genai
+                        genai.configure(api_key=self.gemini_key)
+                        self.client = genai.GenerativeModel(self.gemini_model)
+                        self.provider = 'gemini'
+                        print("↪ Switched to Gemini", flush=True)
+
                     response = self.client.generate_content([
                         {"role": "user", "parts": [system_prompt]},
                         {"role": "model", "parts": ["I understand. I will respond with valid JSON only."]},
                         {"role": "user", "parts": [user_message]}
                     ])
-                    
-                    # Robustly get text from Gemini response
-                    # response.text can fail if the response is complex (multi-part) or blocked by safety filters
+
+                    # Robustly extract text from Gemini response
                     try:
                         if response.text:
                             return response.text
                     except (ValueError, AttributeError):
-                        # Attempt manual extraction from candidates
                         if hasattr(response, 'candidates') and response.candidates:
                             candidate = response.candidates[0]
                             if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
                                 parts = [p.text for p in candidate.content.parts if hasattr(p, 'text')]
                                 if parts:
                                     return "".join(parts)
-                        
-                        # Check if it was blocked
                         if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
                             print(f"🚫 Gemini response blocked: {response.prompt_feedback}", flush=True)
-                        
-                        # Check if candidates were blocked
-                        if hasattr(response, 'candidates') and response.candidates:
-                            finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN')
-                            if finish_reason != 1: # 1 is STOP/SUCCESS in some versions
-                                print(f"⚠️ Gemini Finish Reason: {finish_reason}", flush=True)
-                                
-                        raise ValueError("Gemini returned an empty or complex response that couldn't be parsed as text.")
-                        
-                except Exception as e:
-                    error_msg = str(e).lower()
-                    # Handle Gemini 429 (Quota Exceeded)
-                    if '429' in error_msg or 'quota' in error_msg:
-                        if attempt < max_retries - 1:
-                            print(f"⏳ Gemini quota limit (429) hit. Retrying in {retry_delay}s (Attempt {attempt+1}/{max_retries})...", flush=True)
-                            time.sleep(retry_delay)
-                            continue
-                    raise e
+                        raise ValueError("Gemini returned an empty response.")
 
-        raise ValueError(f"AI API calls to {self.provider} failed after {max_retries} attempts.")
+                except Exception as e:
+                    last_error = e
+                    err = str(e)
+                    if ('429' in err.lower() or 'quota' in err.lower()) and attempt < max_retries - 1:
+                        print(f"⏳ Gemini quota hit, retrying in {retry_delay}s ({attempt+1}/{max_retries})…", flush=True)
+                        time.sleep(retry_delay)
+                        continue
+                    print(f"⚠️ Gemini failed ({err[:80]}…), falling back to Ollama…", flush=True)
+                    break  # move on to Ollama
+
+        # ── 3. Try Ollama (local fallback) ──
+        if self._check_ollama():
+            try:
+                if self.provider != 'ollama':
+                    print(f"↪ Switched to local Ollama ({self.ollama_model})", flush=True)
+                    self.provider = 'ollama'
+                return self._call_ollama(system_prompt, user_message)
+            except Exception as e:
+                last_error = e
+                print(f"⚠️ Ollama failed: {e}", flush=True)
+
+        # ── All providers exhausted ──
+        raise ValueError(
+            f"All AI providers failed. Last error: {last_error}\n"
+            f"Solutions:\n"
+            f"  1. Check internet connectivity for Groq/Gemini\n"
+            f"  2. Verify API keys in .env (GROQ_API_KEY, GEMINI_API_KEY)\n"
+            f"  3. Run Ollama locally: 'ollama serve' then 'ollama pull {self.ollama_model}'"
+        )
 
     def analyze_dataset_with_prompt(
         self,

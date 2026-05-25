@@ -61,7 +61,7 @@ export const datasetsApi = {
     detectHeaders: (id) => api.get(`/datasets/${id}/detect-headers`, { timeout: 45000 }),
     setHeaders: (id, headers) => api.post(`/datasets/${id}/set-headers`, { headers }, { timeout: 120000 }),
     useSample: (sampleId) => api.post('/datasets/use-sample', { sample_id: sampleId }),
-    searchKaggle: (query, page = 1) => api.get('/datasets/kaggle/search', { params: { q: query, page } }),
+    searchKaggle: (query, page = 1) => api.get('/datasets/kaggle/search', { params: { query, page } }),
     downloadKaggle: (ref, name) => api.post('/datasets/kaggle/download', { ref, name }, { timeout: 120000 }),
     generateSynthetic: (config) => api.post('/datasets/generate-synthetic', config, { timeout: 60000 }),
     aiSchema: (prompt) => api.post('/datasets/ai/schema', { prompt }, { timeout: 30000 }),

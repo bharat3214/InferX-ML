@@ -505,7 +505,9 @@ export default function Models() {
                                         </span>
                                         <h3 className="model-name">{model.name}</h3>
                                     </div>
-                                    <ScoreRing score={model.best_score} size={58} />
+                                    <div className="mc-right">
+                                        <ScoreRing score={model.best_score} size={68} />
+                                    </div>
                                 </div>
 
                                 {/* Quick stats */}
@@ -543,7 +545,7 @@ export default function Models() {
                                     paddingTop: '12px',
                                     borderTop: '1px solid rgba(255,255,255,0.1)'
                                 }}>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                         <button
                                             onClick={() => setAnalysisModel(model)}
                                             style={{
@@ -588,7 +590,7 @@ export default function Models() {
                                             Predict
                                         </Link>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                         <button
                                             onClick={() => handleDownload(model.id, model.name)}
                                             disabled={downloadingId === model.id || !model.has_package}
@@ -654,7 +656,7 @@ export default function Models() {
                 {totalPages > 1 && (
                     <div className="models-pagination">
                         <button
-                            className="btn btn-outline pagination-btn"
+                            className="btn btn-outline models-pagination-btn"
                             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                             disabled={currentPage === 1}
                         >
@@ -664,7 +666,7 @@ export default function Models() {
                             Page {currentPage} of {totalPages}
                         </span>
                         <button
-                            className="btn btn-outline pagination-btn"
+                            className="btn btn-outline models-pagination-btn"
                             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                             disabled={currentPage === totalPages}
                         >

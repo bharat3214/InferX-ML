@@ -8,18 +8,19 @@ import {
     LogOut,
     ChevronLeft,
     ChevronRight,
+    Settings,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import TrainingMonitor from './TrainingMonitor'
 import './Layout.css'
-
 const navItems = [
     { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/datasets', icon: Database, label: 'Datasets' },
     { path: '/training', icon: Cpu, label: 'Training' },
     { path: '/models', icon: Box, label: 'Models' },
     { path: '/predictions', icon: Sparkles, label: 'Predictions' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
 ]
 
 export default function Layout({ children }) {

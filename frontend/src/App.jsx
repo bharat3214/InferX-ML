@@ -9,6 +9,8 @@ import Training from './pages/Training'
 import Models from './pages/Models'
 import Predictions from './pages/Predictions'
 import Login from './pages/Login'
+import PricingPage from './pages/PricingPage'
+import SettingsPage from './pages/SettingsPage'
 import { useAuthStore } from './store/authStore'
 
 function App() {
@@ -47,6 +49,8 @@ function App() {
                                 <Route path="/training" element={<Training />} />
                                 <Route path="/models" element={<Models />} />
                                 <Route path="/predictions/:modelId?" element={<Predictions />} />
+                                <Route path="/pricing" element={<PricingPage />} />
+                                <Route path="/settings" element={<SettingsPage />} />
                             </Routes>
                         </Layout>
                     ) : (

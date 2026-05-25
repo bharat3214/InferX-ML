@@ -26,6 +26,8 @@ class Config:
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-change-in-production')
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+    OTP_EXPIRY_MINUTES = int(os.getenv('OTP_EXPIRY_MINUTES', '10'))
+    OTP_RESEND_COOLDOWN_SECONDS = int(os.getenv('OTP_RESEND_COOLDOWN_SECONDS', '60'))
     
     # MinIO
     MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'localhost:9000')
@@ -38,6 +40,7 @@ class Config:
     
     # Redis (Celery broker)
     REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    MAILER_URL = os.getenv('MAILER_URL', 'http://mailer:4000')
     
     # Celery
     CELERY_BROKER_URL = REDIS_URL

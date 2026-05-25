@@ -1,7 +1,8 @@
 .animated-testimonials-container {
-    max-width: 1200px;
+    max-width: none;
+    width: 80%;
     margin: 0 auto;
-    padding: 5rem 1rem;
+    padding: 4rem 0;
 }
 
 .at-grid {
@@ -14,6 +15,12 @@
     .at-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 5rem;
+    }
+}
+
+@media (max-width: 900px) {
+    .animated-testimonials-container {
+        width: 100%;
     }
 }
 

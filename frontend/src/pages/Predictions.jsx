@@ -76,7 +76,7 @@ export default function Predictions() {
                 ) : models.length > 0 ? (
                     <div className="model-selector card">
                         <h2>Select a Model</h2>
-                        <div className="models-grid">
+                        <div className="predictions-models-grid">
                             {paginatedModels.map((model) => (
                                 <div
                                     key={model.id}
@@ -104,7 +104,7 @@ export default function Predictions() {
                         {totalPages > 1 && (
                             <div className="predictions-pagination">
                                 <button
-                                    className="btn btn-outline pagination-btn"
+                                    className="btn btn-outline predictions-pagination-btn"
                                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                                     disabled={currentPage === 1}
                                 >
@@ -112,7 +112,7 @@ export default function Predictions() {
                                 </button>
                                 <span className="pagination-info">Page {currentPage} of {totalPages}</span>
                                 <button
-                                    className="btn btn-outline pagination-btn"
+                                    className="btn btn-outline predictions-pagination-btn"
                                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                                     disabled={currentPage === totalPages}
                                 >
@@ -165,7 +165,7 @@ export default function Predictions() {
                     )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="prediction-header-actions">
                     {currentModel?.dataset_id && (
                         <button
                             className="btn btn-outline"

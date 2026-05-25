@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, useInView } from 'framer-motion'
-import { ContainerScroll } from '../components/ui/ContainerScroll'
+import { motion, useInView, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { BentoGrid, BentoCard } from '../components/ui/BentoGrid'
 import { AnimatedTestimonials } from '../components/ui/AnimatedTestimonials'
 import {
@@ -22,9 +21,21 @@ import {
     ChevronRight,
     Github,
     BookOpen,
-    ExternalLink
+    ExternalLink,
+    Layers,
+    GitBranch,
+    Workflow,
+    TrendingUp,
+    Atom,
+    Network,
+    Crown,
+    Check,
+    X,
+    Star
 } from 'lucide-react'
 import './LandingPage.css'
+
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
 /* ═══════════════════════════════════
    Fade-in wrapper for scroll reveal
@@ -172,6 +183,37 @@ const team = [
 export default function LandingPage() {
     const navigate = useNavigate()
     const [scrolled, setScrolled] = useState(false)
+    const [billingConfig, setBillingConfig] = useState(null)
+
+    useEffect(() => {
+        // Fetch dynamic pricing from backend
+        fetch(`${API_BASE}/billing/config`)
+            .then(res => res.json())
+            .then(data => setBillingConfig(data))
+            .catch(err => console.error('Failed to fetch billing config:', err))
+    }, [])
+
+    /* ═══ Mouse-tracking tilt for terminal card ═══ */
+    const terminalRef = React.useRef(null)
+    const mouseX = useMotionValue(0)
+    const mouseY = useMotionValue(0)
+
+    const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [18, -18]), { stiffness: 80, damping: 12 })
+    const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-18, 18]), { stiffness: 80, damping: 12 })
+
+    const handleTerminalMouseMove = (e) => {
+        const rect = terminalRef.current?.getBoundingClientRect()
+        if (!rect) return
+        const x = (e.clientX - rect.left) / rect.width - 0.5
+        const y = (e.clientY - rect.top) / rect.height - 0.5
+        mouseX.set(x)
+        mouseY.set(y)
+    }
+
+    const handleTerminalMouseLeave = () => {
+        mouseX.set(0)
+        mouseY.set(0)
+    }
 
     useEffect(() => {
         const handleScroll = () => setScrolled(window.scrollY > 40)
@@ -197,6 +239,7 @@ export default function LandingPage() {
                     <div className="nav-links">
                         <button onClick={() => scrollToSection('features')} className="nav-link">Features</button>
                         <button onClick={() => scrollToSection('how-it-works')} className="nav-link">How it Works</button>
+                        <button onClick={() => scrollToSection('pricing')} className="nav-link">Pricing</button>
                     </div>
 
                     <div className="nav-actions">
@@ -209,7 +252,7 @@ export default function LandingPage() {
                 </div>
             </nav>
 
-            {/* ═══ HERO with ContainerScroll ═══ */}
+            {/* ═══ HERO — Text Left, Terminal Right ═══ */}
             <section className="hero-section">
                 {/* Animated gradient orbs */}
                 <div className="hero-orb orb-1" />
@@ -217,80 +260,149 @@ export default function LandingPage() {
                 <div className="hero-orb orb-3" />
                 <div className="hero-grid-bg" />
 
-                <ContainerScroll
-                    titleComponent={
-                        <div className="hero-text">
-                            <motion.div
-                                className="hero-badge"
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: 0.2, duration: 0.5 }}
-                            >
-                                <Zap size={14} />
-                                <span>No-Code ML Platform</span>
-                            </motion.div>
-                            <h1 className="hero-title">
-                                Build ML Models.
-                                <br />
-                                <span className="hero-gradient-text">No Code. No Limits.</span>
-                            </h1>
-                            <p className="hero-subtitle">
-                                Upload your data, describe your goal — InferX trains, explains,
-                                and deploys models for you. Powered by AutoML and AI explainability.
-                            </p>
-                            <div className="hero-actions">
-                                <button onClick={() => navigate('/login')} className="btn-hero-primary">
-                                    <Sparkles size={18} />
-                                    Get Started Free
-                                    <ArrowRight size={18} />
-                                </button>
-                                <button onClick={() => scrollToSection('how-it-works')} className="btn-hero-secondary">
-                                    See How It Works
-                                    <ExternalLink size={16} />
-                                </button>
+                {/* Floating ML icons */}
+                {[
+                    { Icon: Brain,      x: '8%',  y: '18%', size: 28, delay: 0,   dur: 5 },
+                    { Icon: Network,    x: '85%', y: '12%', size: 24, delay: 0.8, dur: 6 },
+                    { Icon: Layers,     x: '5%',  y: '72%', size: 22, delay: 1.5, dur: 4.5 },
+                    { Icon: Atom,       x: '92%', y: '65%', size: 26, delay: 0.3, dur: 5.5 },
+                    { Icon: GitBranch,  x: '15%', y: '88%', size: 20, delay: 2,   dur: 4 },
+                    { Icon: Workflow,   x: '78%', y: '85%', size: 22, delay: 1.2, dur: 6.5 },
+                    { Icon: TrendingUp, x: '50%', y: '8%',  size: 20, delay: 0.6, dur: 5 },
+                ].map(({ Icon, x, y, size, delay, dur }, i) => (
+                    <motion.div
+                        key={i}
+                        className="hero-float-icon"
+                        style={{ left: x, top: y }}
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{
+                            opacity: [0, 0.35, 0.2, 0.35],
+                            scale: 1,
+                            y: [0, -12, 0, 12, 0],
+                        }}
+                        transition={{
+                            opacity: { delay, duration: dur, repeat: Infinity },
+                            scale:   { delay, duration: 0.6 },
+                            y:       { delay, duration: dur, repeat: Infinity, ease: 'easeInOut' },
+                        }}
+                    >
+                        <Icon size={size} />
+                    </motion.div>
+                ))}
+
+                <div className="hero-split">
+                    {/* Left — Text */}
+                    <motion.div
+                        className="hero-text hero-text-left"
+                        initial={{ opacity: 0, x: -40 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.7, ease: 'easeOut' }}
+                    >
+                        <motion.div
+                            className="hero-badge"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.2, duration: 0.5 }}
+                        >
+                            <Zap size={14} />
+                            <span>AI-Powered AutoML Engine</span>
+                        </motion.div>
+                        <h1 className="hero-title">
+                            From Raw Data to
+                            <br />
+                            <span className="hero-gradient-text">Production Models</span>
+                            <br />
+                            <span className="hero-title-accent">in Minutes.</span>
+                        </h1>
+                        <p className="hero-subtitle">
+                            Drop your CSV. Pick a target. InferX handles the rest — feature engineering,
+                            model selection, hyperparameter tuning, and explainability.
+                            <strong> Zero code. Full control.</strong>
+                        </p>
+                        <div className="hero-actions">
+                            <button onClick={() => navigate('/login')} className="btn-hero-primary">
+                                <Sparkles size={18} />
+                                Start Building Free
+                                <ArrowRight size={18} />
+                            </button>
+                            <button onClick={() => scrollToSection('how-it-works')} className="btn-hero-secondary">
+                                See How It Works
+                                <ExternalLink size={16} />
+                            </button>
+                        </div>
+                        <div className="hero-stats">
+                            <div className="hero-stat">
+                                <span className="stat-value">10+</span>
+                                <span className="stat-label">ML Algorithms</span>
+                            </div>
+                            <div className="hero-stat-divider" />
+                            <div className="hero-stat">
+                                <span className="stat-value">94%+</span>
+                                <span className="stat-label">Avg Accuracy</span>
+                            </div>
+                            <div className="hero-stat-divider" />
+                            <div className="hero-stat">
+                                <span className="stat-value">&lt;5 min</span>
+                                <span className="stat-label">To Deploy</span>
                             </div>
                         </div>
-                    }
-                >
-                    {/* Mock dashboard inside the 3D card */}
-                    <div className="hero-dashboard-mock">
-                        <div className="mock-header">
-                            <div className="mock-dots">
-                                <span className="dot dot-red" />
-                                <span className="dot dot-yellow" />
-                                <span className="dot dot-green" />
-                            </div>
-                            <span className="mock-title">InferX-ML — Training</span>
-                        </div>
-                        <div className="mock-body">
-                            <div className="mock-sidebar">
-                                <div className="mock-nav-item active"><Database size={14} /> Datasets</div>
-                                <div className="mock-nav-item"><Cpu size={14} /> Training</div>
-                                <div className="mock-nav-item"><Package size={14} /> Models</div>
-                                <div className="mock-nav-item"><BarChart3 size={14} /> Predictions</div>
-                            </div>
-                            <div className="mock-content">
-                                <div className="mock-terminal">
-                                    <div className="term-line"><span className="term-green">✓</span> Preprocessing complete</div>
-                                    <div className="term-line"><span className="term-blue">⟳</span> Training RandomForest...</div>
-                                    <div className="term-line"><span className="term-blue">⟳</span> Training XGBoost...</div>
-                                    <div className="term-line"><span className="term-green">✓</span> Best model: XGBoost — 94.7%</div>
-                                    <div className="term-line term-dim">█████████████░░ 87%</div>
+                    </motion.div>
+
+                    {/* Right — Terminal Mock with 3D tilt */}
+                    <motion.div
+                        ref={terminalRef}
+                        className="hero-terminal-wrap"
+                        initial={{ opacity: 0, x: 40 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.7, delay: 0.15, ease: 'easeOut' }}
+                        style={{
+                            rotateX,
+                            rotateY,
+                            transformPerspective: 800,
+                            transformStyle: 'preserve-3d',
+                        }}
+                        onMouseMove={handleTerminalMouseMove}
+                        onMouseLeave={handleTerminalMouseLeave}
+                    >
+                        <div className="hero-dashboard-mock">
+                            <div className="mock-header">
+                                <div className="mock-dots">
+                                    <span className="dot dot-red" />
+                                    <span className="dot dot-yellow" />
+                                    <span className="dot dot-green" />
                                 </div>
-                                <div className="mock-score-ring">
-                                    <svg viewBox="0 0 120 120" className="ring-svg">
-                                        <circle cx="60" cy="60" r="52" className="ring-bg" />
-                                        <circle cx="60" cy="60" r="52" className="ring-fill" />
-                                    </svg>
-                                    <div className="ring-label">
-                                        <span className="ring-value">94.7%</span>
-                                        <span className="ring-text">Accuracy</span>
+                                <span className="mock-title">InferX-ML — Training</span>
+                            </div>
+                            <div className="mock-body">
+                                <div className="mock-sidebar">
+                                    <div className="mock-nav-item active"><Database size={14} /> Datasets</div>
+                                    <div className="mock-nav-item"><Cpu size={14} /> Training</div>
+                                    <div className="mock-nav-item"><Package size={14} /> Models</div>
+                                    <div className="mock-nav-item"><BarChart3 size={14} /> Predictions</div>
+                                </div>
+                                <div className="mock-content">
+                                    <div className="mock-terminal">
+                                        <div className="term-line"><span className="term-green">✓</span> Preprocessing complete</div>
+                                        <div className="term-line"><span className="term-blue">⟳</span> Training RandomForest...</div>
+                                        <div className="term-line"><span className="term-blue">⟳</span> Training XGBoost...</div>
+                                        <div className="term-line"><span className="term-green">✓</span> Best model: XGBoost — 94.7%</div>
+                                        <div className="term-line term-dim">█████████████░░ 87%</div>
+                                    </div>
+                                    <div className="mock-score-ring">
+                                        <svg viewBox="0 0 120 120" className="ring-svg">
+                                            <circle cx="60" cy="60" r="52" className="ring-bg" />
+                                            <circle cx="60" cy="60" r="52" className="ring-fill" />
+                                        </svg>
+                                        <div className="ring-label">
+                                            <span className="ring-value">94.7%</span>
+                                            <span className="ring-text">Accuracy</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </ContainerScroll>
+                    </motion.div>
+                </div>
             </section>
 
             {/* ═══ FEATURES (Bento Grid) ═══ */}
@@ -359,6 +471,112 @@ export default function LandingPage() {
                             </div>
                         </FadeIn>
                     ))}
+                </div>
+            </section>
+
+            {/* ═══ PRICING ═══ */}
+            <section id="pricing" className="pricing-section">
+                <FadeIn>
+                    <div className="section-label">
+                        <Crown size={14} />
+                        <span>Pricing</span>
+                    </div>
+                    <h2 className="section-title">Simple, transparent pricing</h2>
+                    <p className="section-subtitle">Start free. Upgrade when you need more power.</p>
+                </FadeIn>
+
+                <div className="pricing-grid">
+                    {/* Free Plan */}
+                    <FadeIn delay={0.1}>
+                        <div className="pricing-card">
+                            <div className="pricing-card-header">
+                                <span className="pricing-plan-name">Free</span>
+                                <div className="pricing-price">
+                                    <span className="pricing-currency">₹</span>
+                                    <span className="pricing-amount">0</span>
+                                    <span className="pricing-period">/mo</span>
+                                </div>
+                                <p className="pricing-desc">Perfect for learning &amp; small experiments</p>
+                            </div>
+                            <ul className="pricing-features">
+                                <li><Check size={16} className="feature-check" /> 1 training per day</li>
+                                <li><Check size={16} className="feature-check" /> 4 ML algorithms</li>
+                                <li><Check size={16} className="feature-check" /> 20 API requests / min</li>
+                                <li><Check size={16} className="feature-check" /> Basic model export</li>
+                                <li className="feature-disabled"><X size={16} className="feature-x" /> XGBoost &amp; LightGBM</li>
+                                <li className="feature-disabled"><X size={16} className="feature-x" /> Advanced deep learning</li>
+                                <li className="feature-disabled"><X size={16} className="feature-x" /> Priority support</li>
+                            </ul>
+                            <div className="pricing-card-footer">
+                                <button onClick={() => navigate('/login')} className="pricing-btn pricing-btn-outline">
+                                    Get Started Free
+                                </button>
+                            </div>
+                        </div>
+                    </FadeIn>
+
+                    {/* Pro Plan */}
+                    <FadeIn delay={0.2}>
+                        <div className="pricing-card pricing-card-pro">
+                            <div className="pricing-popular-badge">
+                                <Zap size={12} />
+                                Most Popular
+                            </div>
+                            <div className="pricing-card-header">
+                                <span className="pricing-plan-name">Pro</span>
+                                <div className="pricing-price">
+                                    <span className="pricing-currency">₹</span>
+                                    <span className="pricing-amount">{billingConfig ? (billingConfig.pro_plan_amount / 100) : '499'}</span>
+                                    <span className="pricing-period">/mo</span>
+                                </div>
+                                <p className="pricing-desc">For serious practitioners &amp; production use</p>
+                            </div>
+                            <ul className="pricing-features">
+                                <li><Check size={16} className="feature-check pro" /> Unlimited training jobs</li>
+                                <li><Check size={16} className="feature-check pro" /> 10+ ML algorithms</li>
+                                <li><Check size={16} className="feature-check pro" /> 200 API requests / min</li>
+                                <li><Check size={16} className="feature-check pro" /> Advanced model export</li>
+                                <li><Check size={16} className="feature-check pro" /> XGBoost &amp; LightGBM</li>
+                                <li><Check size={16} className="feature-check pro" /> YOLOv8 deep learning</li>
+                                <li><Check size={16} className="feature-check pro" /> Priority support</li>
+                            </ul>
+                            <div className="pricing-card-footer">
+                                <button onClick={() => navigate('/login')} className="pricing-btn pricing-btn-primary">
+                                    <Crown size={16} />
+                                    Upgrade to Pro
+                                </button>
+                            </div>
+                        </div>
+                    </FadeIn>
+
+                    {/* Advance Plan */}
+                    <FadeIn delay={0.3}>
+                        <div className="pricing-card pricing-card-advance" style={{ borderColor: '#8b5cf6', boxShadow: '0 0 40px -10px rgba(139, 92, 246, 0.15)', background: 'linear-gradient(to bottom, rgba(30, 30, 40, 0.8), rgba(20, 20, 28, 0.9))' }}>
+                            <div className="pricing-card-header">
+                                <span className="pricing-plan-name" style={{ color: '#8b5cf6' }}>Advance</span>
+                                <div className="pricing-price">
+                                    <span className="pricing-currency">₹</span>
+                                    <span className="pricing-amount">{billingConfig ? (billingConfig.advance_plan_amount / 100) : '4999'}</span>
+                                    <span className="pricing-period">/yr</span>
+                                </div>
+                                <p className="pricing-desc">Best value for long-term production workloads</p>
+                            </div>
+                            <ul className="pricing-features">
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Everything in Pro</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> 1 Year Full Access</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Priority API access</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Early access features</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Dedicated support</li>
+                                <li><Check size={16} className="feature-check pro" style={{ color: '#8b5cf6' }} /> Custom integrations</li>
+                            </ul>
+                            <div className="pricing-card-footer">
+                                <button onClick={() => navigate('/login')} className="pricing-btn pricing-btn-primary" style={{ background: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', boxShadow: '0 8px 20px -8px rgba(139, 92, 246, 0.5)' }}>
+                                    <Star size={16} />
+                                    Get Advance Plan
+                                </button>
+                            </div>
+                        </div>
+                    </FadeIn>
                 </div>
             </section>
 

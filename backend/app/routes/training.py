@@ -178,6 +178,18 @@ def start_training():
     if not dataset_id:
         return jsonify({'error': 'Dataset ID is required'}), 400
 
+    from app.models.user import User
+    from datetime import datetime, timedelta
+    user = User.query.get(user_id)
+    if user and user.plan_type == 'free':
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        recent_trainings = Experiment.query.filter(
+            Experiment.user_id == user_id,
+            Experiment.created_at >= yesterday
+        ).count()
+        if recent_trainings >= 1:
+            return jsonify({'error': 'Free plan limit reached (1 training per day max). Upgrade to Pro for unlimited training.'}), 403
+
     # Verify dataset exists and belongs to user
     dataset = Dataset.query.filter_by(id=dataset_id, user_id=user_id).first()
     if not dataset:
@@ -889,7 +901,11 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
         epochs = config.get('epochs')
         max_iter = int(epochs) if epochs else 1000
 
-        # Define models to try - ALL AVAILABLE ALGORITHMS
+        from app.models.user import User
+        user = User.query.get(experiment.user_id)
+        is_pro = user and user.plan_type in ('pro', 'advance')
+
+        # Define models to try
         if problem_type == 'classification':
             from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
             from sklearn.svm import SVC
@@ -900,27 +916,31 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
             models = [
                 ('Logistic Regression', LogisticRegression(max_iter=max_iter, random_state=42)),
                 ('Random Forest', RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
-                ('Gradient Boosting', GradientBoostingClassifier(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5)),
-                ('SVM', SVC(kernel='rbf', probability=True, random_state=42, max_iter=max_iter if epochs else -1)),
-                ('KNN', KNeighborsClassifier(n_neighbors=5)),
                 ('Decision Tree', DecisionTreeClassifier(random_state=42, max_depth=max_depth if max_depth else 10)),
-                ('AdaBoost', AdaBoostClassifier(n_estimators=n_estimators, random_state=42)),
-                ('Extra Trees', ExtraTreesClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
+                ('KNN', KNeighborsClassifier(n_neighbors=5))
             ]
 
-            # Add XGBoost if available
-            try:
-                from xgboost import XGBClassifier
-                models.append(('XGBoost', XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='logloss')))
-            except ImportError:
-                print("⚠️ XGBoost not available, skipping...", flush=True)
+            if is_pro:
+                models.extend([
+                    ('Gradient Boosting', GradientBoostingClassifier(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5)),
+                    ('SVM', SVC(kernel='rbf', probability=True, random_state=42, max_iter=max_iter if epochs else -1)),
+                    ('AdaBoost', AdaBoostClassifier(n_estimators=n_estimators, random_state=42)),
+                    ('Extra Trees', ExtraTreesClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=42))
+                ])
 
-            # Add LightGBM if available
-            try:
-                from lightgbm import LGBMClassifier
-                models.append(('LightGBM', LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)))
-            except ImportError:
-                print("⚠️ LightGBM not available, skipping...", flush=True)
+                # Add XGBoost if available
+                try:
+                    from xgboost import XGBClassifier
+                    models.append(('XGBoost', XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='logloss')))
+                except ImportError:
+                    print("⚠️ XGBoost not available, skipping...", flush=True)
+
+                # Add LightGBM if available
+                try:
+                    from lightgbm import LGBMClassifier
+                    models.append(('LightGBM', LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)))
+                except ImportError:
+                    print("⚠️ LightGBM not available, skipping...", flush=True)
 
             scoring = 'accuracy'
         else:
@@ -932,31 +952,35 @@ def _run_training_task(experiment_id, file_path, target_column, column_info):
 
             models = [
                 ('Linear Regression', LinearRegression()),
-                ('Ridge Regression', Ridge(random_state=42, max_iter=max_iter if epochs else None)),
-                ('Lasso Regression', Lasso(random_state=42, max_iter=max_iter if epochs else 2000)),
-                ('ElasticNet', ElasticNet(random_state=42, max_iter=max_iter if epochs else 2000)),
                 ('Random Forest', RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
-                ('Gradient Boosting', GradientBoostingRegressor(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5)),
-                ('SVR', SVR(kernel='rbf', max_iter=max_iter if epochs else -1)),
-                ('KNN', KNeighborsRegressor(n_neighbors=5)),
                 ('Decision Tree', DecisionTreeRegressor(random_state=42, max_depth=max_depth if max_depth else 10)),
-                ('AdaBoost', AdaBoostRegressor(n_estimators=n_estimators, random_state=42)),
-                ('Extra Trees', ExtraTreesRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)),
+                ('KNN', KNeighborsRegressor(n_neighbors=5))
             ]
 
-            # Add XGBoost if available
-            try:
-                from xgboost import XGBRegressor
-                models.append(('XGBoost', XGBRegressor(n_estimators=100, random_state=42)))
-            except ImportError:
-                print("⚠️ XGBoost not available, skipping...", flush=True)
+            if is_pro:
+                models.extend([
+                    ('Ridge Regression', Ridge(random_state=42, max_iter=max_iter if epochs else None)),
+                    ('Lasso Regression', Lasso(random_state=42, max_iter=max_iter if epochs else 2000)),
+                    ('ElasticNet', ElasticNet(random_state=42, max_iter=max_iter if epochs else 2000)),
+                    ('Gradient Boosting', GradientBoostingRegressor(n_estimators=n_estimators, random_state=42, max_depth=max_depth if max_depth else 5)),
+                    ('SVR', SVR(kernel='rbf', max_iter=max_iter if epochs else -1)),
+                    ('AdaBoost', AdaBoostRegressor(n_estimators=n_estimators, random_state=42)),
+                    ('Extra Trees', ExtraTreesRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42))
+                ])
 
-            # Add LightGBM if available
-            try:
-                from lightgbm import LGBMRegressor
-                models.append(('LightGBM', LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)))
-            except ImportError:
-                print("⚠️ LightGBM not available, skipping...", flush=True)
+                # Add XGBoost if available
+                try:
+                    from xgboost import XGBRegressor
+                    models.append(('XGBoost', XGBRegressor(n_estimators=100, random_state=42)))
+                except ImportError:
+                    print("⚠️ XGBoost not available, skipping...", flush=True)
+
+                # Add LightGBM if available
+                try:
+                    from lightgbm import LGBMRegressor
+                    models.append(('LightGBM', LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)))
+                except ImportError:
+                    print("⚠️ LightGBM not available, skipping...", flush=True)
 
             scoring = 'r2'
 

@@ -83,6 +83,16 @@ def train_model_task(self, experiment_id: int) -> Dict[str, Any]:
             experiment.best_model_id = result.get('model_path')
             db.session.commit()
             
+            # Send notification email if user opted in
+            try:
+                from app.models.user import User
+                from app.services.notification_service import notify_training_completed
+                user = User.query.get(experiment.user_id)
+                if user:
+                    notify_training_completed(user, experiment.name, result.get('best_model'))
+            except Exception as notify_err:
+                print(f'[notify] training_completed dispatch error: {notify_err}', flush=True)
+            
             return {
                 'status': 'success',
                 'experiment_id': experiment_id,
@@ -93,6 +103,16 @@ def train_model_task(self, experiment_id: int) -> Dict[str, Any]:
         except Exception as e:
             experiment.status = 'failed'
             db.session.commit()
+            
+            # Send failure notification
+            try:
+                from app.models.user import User
+                from app.services.notification_service import notify_training_failed
+                user = User.query.get(experiment.user_id)
+                if user:
+                    notify_training_failed(user, experiment.name, str(e))
+            except Exception as notify_err:
+                print(f'[notify] training_failed dispatch error: {notify_err}', flush=True)
             
             return {
                 'status': 'error',
