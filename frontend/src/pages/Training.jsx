@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -55,6 +55,55 @@ export default function Training() {
 
     // Advanced Configuration State
     const [showAdvanced, setShowAdvanced] = useState(false)
+    const [activeRightTab, setActiveRightTab] = useState('progress') // progress | console
+
+    // Resizable Panels State
+    const [leftWidth, setLeftWidth] = useState(380) // Default 380px
+    const [isDragging, setIsDragging] = useState(false)
+    const layoutRef = useRef(null)
+
+    const startDragging = useCallback((e) => {
+        e.preventDefault()
+        setIsDragging(true)
+    }, [])
+
+    useEffect(() => {
+        if (!isDragging) return
+
+        const handleMove = (e) => {
+            if (!layoutRef.current) return
+            const containerRect = layoutRef.current.getBoundingClientRect()
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX
+            let newWidth = clientX - containerRect.left
+            
+            // Bounds check (min 300px, max viewport container width minus 320px)
+            const minWidth = 300
+            const maxWidth = Math.max(300, containerRect.width - 320)
+            if (newWidth < minWidth) newWidth = minWidth
+            if (newWidth > maxWidth) newWidth = maxWidth
+            
+            setLeftWidth(newWidth)
+        }
+
+        const handleUp = () => {
+            setIsDragging(false)
+        }
+
+        window.addEventListener('mousemove', handleMove)
+        window.addEventListener('mouseup', handleUp)
+        window.addEventListener('touchmove', handleMove, { passive: true })
+        window.addEventListener('touchend', handleUp)
+
+        document.body.classList.add('is-dragging-split')
+
+        return () => {
+            window.removeEventListener('mousemove', handleMove)
+            window.removeEventListener('mouseup', handleUp)
+            window.removeEventListener('touchmove', handleMove)
+            window.removeEventListener('touchend', handleUp)
+            document.body.classList.remove('is-dragging-split')
+        }
+    }, [isDragging])
 
     // AI Prompt Analysis State
     const [aiAnalysis, setAiAnalysis] = useState(null)
@@ -448,10 +497,10 @@ export default function Training() {
             </div>
 
             {/* ── Two-Column Layout ── */}
-            <div className="training-layout">
+            <div className="training-layout" ref={layoutRef}>
 
                 {/* ═══ LEFT PANEL: User Inputs ═══ */}
-                <div className="panel panel-left">
+                <div className="panel panel-left" style={{ width: `${leftWidth}px`, flexShrink: 0 }}>
                     <div className="panel-header">
                         <Zap size={16} />
                         <span>Configuration</span>
@@ -840,173 +889,229 @@ export default function Training() {
                     )}
                 </div>
 
-                {/* ═══ RIGHT PANEL: Logs + Model Progress ═══ */}
-                <div className="panel panel-right">
+                {/* ═══ RESIZE DIVIDER HANDLE ═══ */}
+                <div 
+                    className={`training-resize-handle ${isDragging ? 'dragging' : ''}`}
+                    onMouseDown={startDragging}
+                    onTouchStart={startDragging}
+                />
 
-                    {/* RIGHT TOP: Developer Logs */}
-                    <div className="right-section logs-section">
-                        <div className="panel-header">
+                {/* ═══ RIGHT PANEL: Logs + Model Progress with Dual Tabs ═══ */}
+                <div className="panel panel-right" style={{ flexGrow: 1, minWidth: 0 }}>
+                    
+                    {/* Tab Navigation Headers */}
+                    <div className="right-tabs-navigation">
+                        <button 
+                            className={`right-tab-btn ${activeRightTab === 'progress' ? 'active' : ''}`}
+                            onClick={() => setActiveRightTab('progress')}
+                        >
+                            <Brain size={16} />
+                            <span>Progress & Insights</span>
+                        </button>
+                        <button 
+                            className={`right-tab-btn ${activeRightTab === 'console' ? 'active' : ''}`}
+                            onClick={() => setActiveRightTab('console')}
+                        >
                             <Terminal size={16} />
-                            <span>Developer Logs</span>
+                            <span>Developer Console</span>
                             {isTraining && <div className="live-dot" />}
-                        </div>
-                        <pre className="terminal-content">
-                            {combinedLogs || 'Waiting for training to start...'}
-                            <div ref={logsEndRef} />
-                        </pre>
+                        </button>
                     </div>
 
-                    {/* RIGHT BOTTOM: What the Model Does */}
-                    <div className="right-section model-section">
-                        <div className="panel-header">
-                            <Brain size={16} />
-                            <span>What the Model is Doing</span>
-                            {currentJob && (
-                                <button 
-                                    className="btn-download-logs" 
-                                    onClick={handleDownloadLogs}
-                                    title="Download Full Training Log"
-                                >
-                                    <Download size={14} />
-                                    <span>Download Log</span>
-                                </button>
-                            )}
-                        </div>
-
-                        {currentJob ? (
-                            <div className="model-progress-content">
-                                {/* Status Bar */}
-                                <div className="status-row">
-                                    <span className="exp-name">{currentJob.name}</span>
-                                    <span className={`status-badge ${experimentStatus}`}>
-                                        {experimentStatus || 'Starting...'}
-                                    </span>
+                    {/* Tab Content Area */}
+                    <div className="right-tab-content-wrapper">
+                        
+                        {/* TAB 1: PROGRESS & ANALYTICS */}
+                        {activeRightTab === 'progress' && (
+                            <div className="right-section model-section">
+                                <div className="panel-header">
+                                    <Brain size={16} />
+                                    <span>What the Model is Doing</span>
+                                    {currentJob && (
+                                        <button 
+                                            className="btn-download-logs" 
+                                            onClick={handleDownloadLogs}
+                                            title="Download Full Training Log"
+                                        >
+                                            <Download size={14} />
+                                            <span>Download Log</span>
+                                        </button>
+                                    )}
                                 </div>
 
-                                {/* Pipeline Steps */}
-                                <div className="pipeline-steps">
-                                    <div className={`pipeline-step ${['training', 'completed'].includes(experimentStatus) ? 'completed' : 'active'}`}>
-                                        <div className="pipeline-dot">
-                                            <CheckCircle size={14} />
+                                {currentJob ? (
+                                    <div className="model-progress-content">
+                                        {/* Status Bar */}
+                                        <div className="status-row">
+                                            <span className="exp-name">{currentJob.name}</span>
+                                            <span className={`status-badge ${experimentStatus}`}>
+                                                {experimentStatus || 'Starting...'}
+                                            </span>
                                         </div>
-                                        <span>Preprocessing</span>
-                                    </div>
-                                    <div className="pipeline-line" />
-                                    <div className={`pipeline-step ${experimentStatus === 'training' ? 'active' : experimentStatus === 'completed' ? 'completed' : ''}`}>
-                                        <div className="pipeline-dot">
-                                            <Clock size={14} className={experimentStatus === 'training' ? 'animate-pulse' : ''} />
-                                        </div>
-                                        <span>Training</span>
-                                    </div>
-                                    <div className="pipeline-line" />
-                                    <div className={`pipeline-step ${experimentStatus === 'completed' ? 'completed' : ''}`}>
-                                        <div className="pipeline-dot">
-                                            <BarChart3 size={14} />
-                                        </div>
-                                        <span>Evaluation</span>
-                                    </div>
-                                </div>
 
-                                {/* LIVE LEADERBOARD */}
-                                {sortedJobs.length > 0 && (
-                                    <div className="leaderboard-section">
-                                        <div className="panel-header" style={{ marginBottom: '1rem', marginTop: '1.5rem' }}>
-                                            <Target size={16} />
-                                            <span>Live Model Leaderboard</span>
-                                            {isTraining && <div className="live-dot" />}
+                                        {/* Pipeline Steps */}
+                                        <div className="pipeline-steps">
+                                            <div className={`pipeline-step ${['training', 'completed'].includes(experimentStatus) ? 'completed' : 'active'}`}>
+                                                <div className="pipeline-dot">
+                                                    <CheckCircle size={14} />
+                                                </div>
+                                                <span>Preprocessing</span>
+                                            </div>
+                                            <div className="pipeline-line" />
+                                            <div className={`pipeline-step ${experimentStatus === 'training' ? 'active' : experimentStatus === 'completed' ? 'completed' : ''}`}>
+                                                <div className="pipeline-dot">
+                                                    <Clock size={14} className={experimentStatus === 'training' ? 'animate-pulse' : ''} />
+                                                </div>
+                                                <span>Training</span>
+                                            </div>
+                                            <div className="pipeline-line" />
+                                            <div className={`pipeline-step ${experimentStatus === 'completed' ? 'completed' : ''}`}>
+                                                <div className="pipeline-dot">
+                                                    <BarChart3 size={14} />
+                                                </div>
+                                                <span>Evaluation</span>
+                                            </div>
                                         </div>
-                                        <div className="leaderboard-grid">
-                                            {sortedJobs.map((job, index) => {
-                                                const score = job.metrics?.accuracy || job.metrics?.r2_score || 0
-                                                const scoreFmt = (score * 100).toFixed(2) + '%'
-                                                const isEnsemble = job.model_name.toLowerCase().includes('ensemble')
-                                                const isBest = index === 0 && job.status === 'completed' && score > 0
-                                                return (
-                                                    <div key={job.id} className={`leaderboard-card ${isBest ? 'top-model' : ''} ${isEnsemble ? 'ensemble-model' : ''} ${job.status}`}>
-                                                        <div className="lb-rank">#{index + 1}</div>
-                                                        <div className="lb-info">
-                                                            <div className="lb-name">
-                                                                {job.model_name}
-                                                                {isEnsemble && <Sparkles size={12} className="ensemble-icon" />}
+
+                                        {/* LIVE LEADERBOARD */}
+                                        {sortedJobs.length > 0 && (
+                                            <div className="leaderboard-section">
+                                                <div className="panel-header" style={{ marginBottom: '1rem', marginTop: '1.5rem', paddingLeft: 0, paddingRight: 0, borderBottom: 'none' }}>
+                                                    <Target size={16} />
+                                                    <span>Live Model Leaderboard</span>
+                                                    {isTraining && <div className="live-dot" />}
+                                                </div>
+                                                <div className="leaderboard-grid">
+                                                    {sortedJobs.map((job, index) => {
+                                                        const score = job.metrics?.accuracy || job.metrics?.r2_score || 0
+                                                        const scoreFmt = (score * 100).toFixed(2) + '%'
+                                                        const isEnsemble = job.model_name.toLowerCase().includes('ensemble')
+                                                        const isBest = index === 0 && job.status === 'completed' && score > 0
+                                                        return (
+                                                            <div key={job.id} className={`leaderboard-card ${isBest ? 'top-model' : ''} ${isEnsemble ? 'ensemble-model' : ''} ${job.status}`}>
+                                                                <div className="lb-rank">#{index + 1}</div>
+                                                                <div className="lb-info">
+                                                                    <div className="lb-name">
+                                                                        {job.model_name}
+                                                                        {isEnsemble && <Sparkles size={12} className="ensemble-icon" />}
+                                                                    </div>
+                                                                    <div className="lb-metrics">
+                                                                        {job.status === 'completed' && score > 0 ? (
+                                                                            <span className="lb-score">Score: <strong>{scoreFmt}</strong></span>
+                                                                        ) : job.status === 'failed' ? (
+                                                                            <span className="lb-failed">Failed</span>
+                                                                        ) : job.status === 'training' ? (
+                                                                            <span className="lb-training-badge">Training...</span>
+                                                                        ) : (
+                                                                            <span className="lb-pending">Waiting...</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                {isBest && <div className="lb-crown">👑</div>}
                                                             </div>
-                                                            <div className="lb-metrics">
-                                                                {job.status === 'completed' && score > 0 ? (
-                                                                    <span className="lb-score">Score: <strong>{scoreFmt}</strong></span>
-                                                                ) : job.status === 'failed' ? (
-                                                                    <span className="lb-failed">Failed</span>
-                                                                ) : job.status === 'training' ? (
-                                                                    <span className="lb-training-badge">Training...</span>
-                                                                ) : (
-                                                                    <span className="lb-pending">Waiting...</span>
-                                                                )}
+                                                        )
+                                                    })}
+                                                </div>
+
+                                                {/* Ensemble Action Banner if completed */}
+                                                {experimentStatus === 'completed' && sortedJobs.length >= 2 && !sortedJobs.some(j => j.model_name.toLowerCase().includes('ensemble')) && (
+                                                    <div className="ensemble-action-banner">
+                                                        <div className="ensemble-text">
+                                                            <Sparkles size={18} className="ensemble-icon" />
+                                                            <div>
+                                                                <span>Supercharge accuracy by ensembling top models!</span>
                                                             </div>
                                                         </div>
-                                                        {isBest && <div className="lb-crown">👑</div>}
+                                                        <button 
+                                                            className="btn ensemble-action-btn"
+                                                            onClick={handleCombineTop3}
+                                                            disabled={isEnsembling}
+                                                        >
+                                                            {isEnsembling ? (
+                                                                <div className="spinner" style={{ width: 14, height: 14 }}></div>
+                                                            ) : (
+                                                                <Zap size={14} />
+                                                            )}
+                                                            {isEnsembling ? 'Ensembling...' : 'Combine Models'}
+                                                        </button>
                                                     </div>
-                                                )
-                                            })}
-                                        </div>
+                                                )}
+                                            </div>
+                                        )}
 
+                                        {/* Learning Timeline */}
+                                        <LearningTimeline
+                                            explanationData={explanationData}
+                                            isTraining={isTraining}
+                                        />
 
-                                    </div>
-                                )}
+                                        {/* Training Success */}
+                                        {experimentStatus === 'completed' && (
+                                            <div className="success-message">
+                                                <CheckCircle size={20} className="text-success" />
+                                                <h3>Training Complete!</h3>
+                                                {latestTrainingData?.experiment?.best_model_name && (
+                                                    <div className="result-summary">
+                                                        <div className="result-item">
+                                                            <span className="result-label">🏆 Best Model</span>
+                                                            <span className="result-value">{latestTrainingData.experiment.best_model_name}</span>
+                                                        </div>
+                                                        <div className="result-item">
+                                                            <span className="result-label">📊 Score</span>
+                                                            <span className="result-value">
+                                                                {(latestTrainingData.experiment.best_score * 100).toFixed(2)}%
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                <a href="/models" className="btn btn-sm btn-outline">View Models</a>
+                                            </div>
+                                        )}
 
-                                {/* Learning Timeline */}
-                                <LearningTimeline
-                                    explanationData={explanationData}
-                                    isTraining={isTraining}
-                                />
-
-                                {/* Training Success */}
-                                {experimentStatus === 'completed' && (
-                                    <div className="success-message">
-                                        <CheckCircle size={20} className="text-success" />
-                                        <h3>Training Complete!</h3>
-                                        {latestTrainingData?.experiment?.best_model_name && (
-                                            <div className="result-summary">
-                                                <div className="result-item">
-                                                    <span className="result-label">🏆 Best Model</span>
-                                                    <span className="result-value">{latestTrainingData.experiment.best_model_name}</span>
+                                        {/* Training Graphs */}
+                                        {experimentStatus === 'completed' && hasGraphs && (
+                                            <div className="training-graphs-section" style={{ marginTop: '1.5rem' }}>
+                                                <div className="panel-header" style={{ marginBottom: '1rem', paddingLeft: 0, paddingRight: 0, borderBottom: 'none' }}>
+                                                    <ImageIcon size={16} />
+                                                    <span>Evaluation Graphs</span>
                                                 </div>
-                                                <div className="result-item">
-                                                    <span className="result-label">📊 Score</span>
-                                                    <span className="result-value">
-                                                        {(latestTrainingData.experiment.best_score * 100).toFixed(2)}%
-                                                    </span>
+                                                <div className="graphs-grid">
+                                                    {Object.entries(graphs).map(([name, src]) => (
+                                                        <div key={name} className="graph-item card">
+                                                            <div className="graph-header">
+                                                                <h5 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                                                    {name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                                </h5>
+                                                            </div>
+                                                            <div className="graph-img-wrap">
+                                                                <img src={src} alt={name} loading="lazy" />
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}
-                                        <a href="/models" className="btn btn-sm btn-outline">View Models</a>
                                     </div>
-                                )}
-
-                                {/* Training Graphs */}
-                                {experimentStatus === 'completed' && hasGraphs && (
-                                    <div className="training-graphs-section" style={{ marginTop: '1.5rem' }}>
-                                        <div className="panel-header" style={{ marginBottom: '1rem' }}>
-                                            <ImageIcon size={16} />
-                                            <span>Evaluation Graphs</span>
-                                        </div>
-                                        <div className="graphs-grid">
-                                            {Object.entries(graphs).map(([name, src]) => (
-                                                <div key={name} className="graph-item card">
-                                                    <div className="graph-header">
-                                                        <h5 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                                            {name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                                                        </h5>
-                                                    </div>
-                                                    <div className="graph-img-wrap">
-                                                        <img src={src} alt={name} loading="lazy" />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
+                                ) : (
+                                    <div className="model-empty">
+                                        <p>Configure and start training to see model progress here.</p>
                                     </div>
                                 )}
                             </div>
-                        ) : (
-                            <div className="model-empty">
-                                <p>Configure and start training to see model progress here.</p>
+                        )}
+
+                        {/* TAB 2: DEVELOPER CONSOLE LOGS */}
+                        {activeRightTab === 'console' && (
+                            <div className="right-section logs-section" style={{ height: '100%' }}>
+                                <div className="panel-header">
+                                    <Terminal size={16} />
+                                    <span>Developer Logs</span>
+                                    {isTraining && <div className="live-dot" />}
+                                </div>
+                                <pre className="terminal-content" style={{ height: 'calc(100% - 41px)' }}>
+                                    {combinedLogs || 'Waiting for training to start...'}
+                                    <div ref={logsEndRef} />
+                                </pre>
                             </div>
                         )}
                     </div>

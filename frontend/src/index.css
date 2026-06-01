@@ -180,6 +180,11 @@ a:hover {
     color: var(--color-gray-500);
 }
 
+select.input option {
+    background-color: var(--color-gray-800, #1f2937);
+    color: var(--color-gray-100, #f3f4f6);
+}
+
 .label {
     display: block;
     margin-bottom: var(--space-2);
