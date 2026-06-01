@@ -103,6 +103,16 @@ export const useAuthStore = create(
                 }
             },
 
+            handleOAuthCallback: (token, user) => {
+                const parsed = typeof user === 'string' ? JSON.parse(user) : user
+                set({
+                    user: parsed,
+                    token,
+                    isAuthenticated: true,
+                })
+                api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+            },
+
             logout: () => {
                 set({
                     user: null,

@@ -46,6 +46,17 @@ class Config:
     CELERY_BROKER_URL = REDIS_URL
     CELERY_RESULT_BACKEND = REDIS_URL
     
+    # Google OAuth
+    GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+    GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
+
+    # GitHub OAuth
+    GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
+    GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
+
+    # Frontend URL for post-OAuth redirect
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+
     # Upload settings
     MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500 MB max upload
     ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'jpg', 'jpeg', 'png', 'zip'}

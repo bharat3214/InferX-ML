@@ -120,6 +120,30 @@ def _sync_auth_schema():
     db.session.commit()
 
 
+def _sync_oauth_schema():
+    """Add OAuth columns for existing installs."""
+    if db.engine.dialect.name != 'postgresql':
+        return
+
+    statements = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider VARCHAR(20)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider_id VARCHAR(256)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(512)",
+        "ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL",
+    ]
+    for statement in statements:
+        db.session.execute(text(statement))
+    # Add unique constraint for OAuth identity (ignore if exists)
+    db.session.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE users ADD CONSTRAINT uq_oauth_identity
+                UNIQUE (oauth_provider, oauth_provider_id);
+        EXCEPTION WHEN duplicate_table THEN NULL;
+        END $$;
+    """))
+    db.session.commit()
+
+
 def _register_rate_limit_error_handler(app):
     """Return JSON instead of plain text on 429 errors (P0-4 adjacent)."""
     @app.errorhandler(429)
@@ -174,10 +198,12 @@ def create_app(config_class=Config):
     from .routes.system import system_bp
     from .routes.billing import billing_bp
     from .routes.notifications import notifications_bp
+    from .routes.oauth import oauth_bp, init_oauth
     from .models.notification_preference import NotificationPreference  # ensure table creation
     from .models.payment import Payment  # ensure payments table creation
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(oauth_bp, url_prefix='/api/auth')
     app.register_blueprint(datasets_bp, url_prefix='/api/datasets')
     app.register_blueprint(training_bp, url_prefix='/api/training')
     app.register_blueprint(predictions_bp, url_prefix='/api/predict')
@@ -185,6 +211,7 @@ def create_app(config_class=Config):
     app.register_blueprint(system_bp, url_prefix='/api/system')
     app.register_blueprint(billing_bp, url_prefix='/api/billing')
     app.register_blueprint(notifications_bp, url_prefix='/api/notifications')
+    init_oauth(app)
     
     # Health check endpoint (exempt from rate limiting)
     @app.route('/api/health')
@@ -195,6 +222,7 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
         _sync_auth_schema()
+        _sync_oauth_schema()
         _sync_billing_schema()
     
     return app

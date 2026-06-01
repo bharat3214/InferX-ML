@@ -134,12 +134,59 @@
 
 .auth-point {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
     border-radius: 16px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
     color: #e2e8f0;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.auth-point:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(110, 231, 183, 0.15);
+    transform: translateX(4px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.auth-point-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #6ee7b7;
+    background: rgba(110, 231, 183, 0.08);
+    padding: 8px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.auth-point:hover .auth-point-icon {
+    background: rgba(110, 231, 183, 0.14);
+    color: #a7f3d0;
+}
+
+.auth-point-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
+}
+
+.auth-point-title {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: #f8fafc;
+    letter-spacing: 0.01em;
+}
+
+.auth-point-desc {
+    font-size: 0.8rem;
+    color: rgba(226, 232, 240, 0.55);
+    line-height: 1.4;
 }
 
 .auth-form-panel {
@@ -300,6 +347,76 @@
 .toggle-btn:hover,
 .auth-link-button:hover {
     text-decoration: underline;
+}
+
+/* OAuth buttons */
+.oauth-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.oauth-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    padding: 13px 20px;
+    border-radius: 14px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    letter-spacing: 0.01em;
+}
+
+.oauth-google {
+    background: #ffffff;
+    color: #1f1f1f;
+}
+
+.oauth-google:hover {
+    background: #f3f3f3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+}
+
+.oauth-github {
+    background: #24292e;
+    color: #ffffff;
+}
+
+.oauth-github:hover {
+    background: #2f363d;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+}
+
+.oauth-btn svg {
+    flex-shrink: 0;
+}
+
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 20px 0 4px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.auth-divider span {
+    color: var(--color-gray-500);
+    font-size: 0.82rem;
+    white-space: nowrap;
 }
 
 @media (max-width: 900px) {

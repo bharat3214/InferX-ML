@@ -9,6 +9,7 @@ import Training from './pages/Training'
 import Models from './pages/Models'
 import Predictions from './pages/Predictions'
 import Login from './pages/Login'
+import AuthCallback from './pages/AuthCallback'
 import PricingPage from './pages/PricingPage'
 import SettingsPage from './pages/SettingsPage'
 import { useAuthStore } from './store/authStore'
@@ -35,6 +36,7 @@ function App() {
             {/* Public routes */}
             <Route path="/landing" element={!isAuthenticated ? <LandingPage /> : <Navigate to="/" />} />
             <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
             {/* Protected routes */}
             <Route
