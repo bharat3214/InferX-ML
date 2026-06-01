@@ -1,6 +1,5 @@
 .predictions-page {
-    width: min(100%, 1180px);
-    margin: 0 auto;
+    width: 100%;
     color: var(--color-gray-200);
     padding-bottom: var(--space-10);
 }

@@ -292,7 +292,7 @@ export default function Datasets() {
                                     {datasets.map((ds) => (
                                         <tr key={ds.id} onClick={() => setSelectedDataset(ds)}>
                                             <td className="ds-cell-name">
-                                                <FileText size={15} />
+                                                <FileText size={18} />
                                                 <span>{ds.name}</span>
                                             </td>
                                             <td><span className="ds-badge badge-type">{ds.file_type?.toUpperCase()}</span></td>

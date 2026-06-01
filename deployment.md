@@ -1,344 +1,286 @@
-# InferX-ML Cloud-Native Deployment Plan
+# InferX-ML Cloud-Native AWS Deployment Plan
 
-## 🎯 Goal
-Deploy InferX-ML as a production-grade, cloud-native platform with scalable ML workloads, reliable storage, secure secrets, and observability. This plan maps the existing Docker-based architecture into a Kubernetes-first deployment while preserving local Docker Compose for dev.
-
----
-
-## 🧩 System Components (from repo)
-
-| Component | Purpose | Source | Runtime |
-|---|---|---|---|
-| `frontend` | React UI | `frontend/` | Node + Vite / Nginx in prod |
-| `backend` | Flask API + orchestration | `backend/` | Python + Flask |
-| `celery` | Background training tasks | `backend/` | Python + Celery |
-| `celery-beat` | Scheduled jobs | `backend/` | Python + Celery Beat |
-| `streamlit` | Prediction UI | `streamlit_app/` | Streamlit |
-| `postgres` | Metadata DB | Docker image | PostgreSQL 15 |
-| `redis` | Celery broker/result backend | Docker image | Redis 7 |
-| `minio` | Artifact/Object storage | Docker image | MinIO |
-| `mailer` | SMTP-based notification service | `mailer/` | Node + Express |
+This document outlines the architecture and deployment strategy for migrating the **InferX-ML** application from a local Docker Compose setup to a fully managed, scalable, and highly available cloud-native architecture on **Amazon Web Services (AWS)**.
 
 ---
 
-## 🏗️ Target Cloud Architecture (Kubernetes)
+## 🏗️ Cloud-Native Target Architecture
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│                        Cloud Load Balancer                    │
-└───────────────┬──────────────────────────┬────────────────────┘
-                │                          │
-                ▼                          ▼
-     ┌──────────────────┐         ┌──────────────────┐
-     │  Ingress / API GW │         │  Ingress / UI GW │
-     └────────┬─────────┘         └────────┬─────────┘
-              │                            │
-              ▼                            ▼
-┌────────────────────────┐      ┌────────────────────────┐
-│ Flask Backend (API)    │      │ React Frontend (UI)    │
-│ Deployment + Service   │      │ Deployment + Service   │
-└────────┬───────────────┘      └────────┬───────────────┘
-         │                               │
-         ▼                               ▼
-┌────────────────────────┐      ┌────────────────────────┐
-│ Celery Workers          │      │ Streamlit UI          │
-│ Deployment + HPA        │      │ Deployment + Service  │
-└────────┬───────────────┘      └────────┬───────────────┘
-         │                               │
-         ▼                               ▼
-┌───────────────────────────────────────────────────────────────┐
-│ PostgreSQL │ Redis │ MinIO │ Mailer │ Monitoring │ Logging    │
-└───────────────────────────────────────────────────────────────┘
-```
+The target architecture leverages AWS serverless and fully-managed services to minimize operational overhead, maximize security, and provide elastic auto-scaling for both computing resources and machine learning training workloads.
 
----
-
-## ☁️ AWS Reference Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                           Amazon Route 53                        │
-└──────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                    Application Load Balancer (ALB)               │
-└───────────────┬──────────────────────────┬───────────────────────┘
-                │                          │
-                ▼                          ▼
-     ┌──────────────────┐         ┌──────────────────┐
-     │ EKS Ingress (API)│         │ EKS Ingress (UI) │
-     └────────┬─────────┘         └────────┬─────────┘
-              │                            │
-              ▼                            ▼
-┌────────────────────────┐      ┌────────────────────────┐
-│ Flask Backend (EKS)    │      │ React Frontend (EKS)   │
-└────────┬───────────────┘      └────────┬───────────────┘
-         │                               │
-         ▼                               ▼
-┌────────────────────────┐      ┌────────────────────────┐
-│ Celery Workers (EKS)   │      │ Streamlit UI (EKS)     │
-└────────┬───────────────┘      └────────┬───────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ RDS (Postgres) │ ElastiCache (Redis) │ S3 (Artifacts) │ SES/SMTP │
-└──────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    %% Internet & Entry Points
+    User([User Browser]) -->|HTTPS: Port 443| CF[Amazon CloudFront]
+    CF -->|Static Assets| S3Web[S3 Web Bucket - React SPA]
+  
+    User -->|API & Websockets| ALB[Application Load Balancer]
+  
+    %% Networking & Load Balancing
+    subgraph VPC [AWS VPC - 10.0.0.0/16]
+        subgraph PublicSubnets [Public Subnets - Multi-AZ]
+            ALB
+            NAT[NAT Gateways]
+        end
+      
+        subgraph PrivateAppSubnets [Private App Subnets - Multi-AZ]
+            API[ECS Fargate: Flask API]
+            Streamlit[ECS Fargate: Streamlit Predictions]
+            Mailer[ECS Fargate: Node Mailer / SES Integration]
+        end
+      
+        subgraph PrivateWorkerSubnets [Private GPU/Worker Subnets]
+            Worker[ECS on EC2: Celery ML Workers with GPU/CPU Autoscaling]
+        end
+      
+        subgraph PrivateDataSubnets [Private Data Subnets - Multi-AZ]
+            RDS[(Amazon RDS PostgreSQL)]
+            ElastiCache[(Amazon ElastiCache Redis)]
+        end
+    end
+  
+    %% External Integrations & Storage
+    API -->|Read/Write Datasets| S3Data[Amazon S3: Model Vault & Datasets]
+    Worker -->|Read/Write Datasets| S3Data
+    API -->|Write Jobs| ElastiCache
+    Worker -->|Listen for Jobs| ElastiCache
+    API -->|Relational Data| RDS
+    Worker -->|Commit Results| RDS
+  
+    %% Services
+    Mailer -->|Send Emails| SES[Amazon Simple Email Service]
+  
+    %% Credentials & Configs
+    Secrets[AWS Secrets Manager] -.->|Inject Env Vars| API
+    Secrets -.->|Inject Env Vars| Worker
+  
+    style VPC fill:#111,stroke:#333,stroke-width:2px;
+    style PublicSubnets fill:#1b1b1b,stroke:#555,stroke-width:1px;
+    style PrivateAppSubnets fill:#1b1b1b,stroke:#555,stroke-width:1px;
+    style PrivateWorkerSubnets fill:#1b1b1b,stroke:#555,stroke-width:1px;
+    style PrivateDataSubnets fill:#1b1b1b,stroke:#555,stroke-width:1px;
+    style CF fill:#059669,stroke:#10b981,color:#fff;
+    style ALB fill:#0284c7,stroke:#0ea5e9,color:#fff;
+    style RDS fill:#7c2d12,stroke:#ea580c,color:#fff;
+    style S3Web fill:#1e1b4b,stroke:#4f46e5,color:#fff;
+    style S3Data fill:#1e1b4b,stroke:#4f46e5,color:#fff;
+    style Worker fill:#581c87,stroke:#8b5cf6,color:#fff;
 ```
 
-### AWS Service Mapping
+---
 
-| InferX Component | AWS Service | Notes |
-|---|---|---|
-| Kubernetes | **EKS** | Managed control plane + worker node groups |
-| Container registry | **ECR** | Store backend/worker/frontend/streamlit images |
-| DB | **RDS (PostgreSQL)** | Replace in-cluster Postgres |
-| Redis | **ElastiCache (Redis)** | Replace in-cluster Redis |
-| Object storage | **S3** | Replace MinIO for datasets/models/artifacts |
-| Ingress | **ALB Ingress Controller** | Path-based routing for UI/API |
-| Secrets | **Secrets Manager** + K8s Secret Sync | Secure key storage |
-| Logs/Metrics | **CloudWatch** + **Prometheus/Grafana** | Centralized observability |
-| SMTP | **SES** (or external SMTP) | Mailer service backend |
+## 🛠️ AWS Component Mapping
+
+The local Docker Compose services map directly to cloud-native, managed AWS equivalents:
+
+| Local Container Service  | AWS Cloud-Native Equivalent            | Rationale & Configuration                                                                                                            |
+| :----------------------- | :------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------- |
+| **React Frontend** | **Amazon S3 + CloudFront**       | High availability, lower latency via global Edge Locations, and massive cost savings compared to running Node container instances.   |
+| **Flask Backend**  | **AWS ECS on Fargate**           | Serverless container orchestration. Scaled dynamically based on CPU/Memory usage.                                                    |
+| **Streamlit App**  | **AWS ECS on Fargate**           | Independent deployment, scaling separately from main API endpoints.                                                                  |
+| **PostgreSQL**     | **Amazon RDS PostgreSQL**        | Multi-AZ replication for automated backups, security patching, and high availability.                                                |
+| **Redis**          | **Amazon ElastiCache Redis**     | Fully-managed memory broker/cache providing extreme durability and speed for Celery tasks.                                           |
+| **MinIO**          | **Amazon S3**                    | S3 API compatible with unlimited, secure durability and fine-grained IAM policy controls.                                            |
+| **Mailer Service** | **AWS SES**                      | Replaced directly by**AWS Simple Email Service (SES)** via AWS SDK or IAM-authorized SMTP credentials.                         |
+| **Celery Workers** | **AWS ECS on EC2 (GPU-enabled)** | Utilizes GPU container instances (e.g.,`g4dn` / `g5` families) dynamically scale down to `0` when the training queue is empty. |
 
 ---
 
-## ✅ Deployment Strategy (High-Level)
+## 🔒 VPC & Network Infrastructure Setup
 
-1. **Container Build & Registry**
-   - Build images from `docker/` Dockerfiles.
-   - Push to a container registry (ECR/GCR/ACR/DockerHub).
+1. **Subnets Architecture**:
 
-2. **Kubernetes Manifests or Helm**
-   - Deploy each service as a Deployment + Service.
-   - Use separate namespaces for `prod`, `staging`, `dev`.
+   * **Public Subnets**: Houses the Application Load Balancer (ALB) and NAT Gateways. Direct ingress is protected via AWS Shield & AWS WAF.
+   * **Private Application Subnets**: Hosts Flask API, Mailer, and Streamlit containers. Direct internet access is blocked; egress goes through NAT Gateways.
+   * **Private Worker Subnets**: Contains GPU-intensive ML training instances isolated securely from the web.
+   * **Private Database Subnets**: Isolated subnets exclusively accessible by the Application and Worker layers.
+2. **Security Groups Rules (Least Privilege)**:
 
-3. **Storage & Persistence**
-   - PostgreSQL → StatefulSet + PersistentVolume (or managed DB).
-   - MinIO → StatefulSet + PersistentVolume (or managed object storage).
-   - Redis → Deployment + Persistence (or managed Redis).
-
-4. **Ingress + TLS**
-   - Use NGINX Ingress or managed API gateway.
-   - Configure TLS via cert-manager.
-
-5. **Secrets & Config**
-   - Use Kubernetes Secrets for API keys, SMTP, DB creds.
-   - Use ConfigMaps for non-sensitive configs.
-
-6. **Scaling & GPU**
-   - Horizontal Pod Autoscaler for `backend`, `celery`, `streamlit`.
-   - GPU node pool for ML workloads; assign via `nodeSelector`/`tolerations`.
+   * **ALB Security Group**: Allows ports `80` and `443` from `0.0.0.0/0`.
+   * **App Security Group**: Allows port `5000` (API) and `8501` (Streamlit) **only** from the ALB Security Group.
+   * **RDS Security Group**: Allows port `5432` **only** from the App Security Group and Worker Security Group.
+   * **Redis Security Group**: Allows port `6379` **only** from the App Security Group and Worker Security Group.
 
 ---
 
-## 🧭 AWS Networking & Security Baseline
+## 📂 Step-by-Step Deployment Instructions
 
-1. **VPC Design**
-   - Public subnets: ALB, NAT Gateways.
-   - Private subnets: EKS nodes, RDS, ElastiCache.
+### Phase 1: Storage and Databases
 
-2. **Security Groups**
-   - ALB → EKS (HTTP/HTTPS only).
-   - EKS → RDS/ElastiCache (private ports).
+* **Amazon S3 Bucket**:
+  * Create an S3 Bucket (e.g., `inferx-datasets-vault`).
+  * Enable Default Encryption (SSE-S3) and Block Public Access.
+* **Amazon RDS PostgreSQL**:
+  * Deploy RDS instance (Engine: PostgreSQL 15, DB Instance Class: `db.t4g.medium` or higher for prod).
+  * Put in private database subnets.
+* **Amazon ElastiCache Redis**:
+  * Deploy serverless ElastiCache cluster with encryption-in-transit enabled.
 
-3. **IAM**
-   - IAM Roles for Service Accounts (IRSA) for S3/Secrets access.
-   - Restrict build/deploy roles to least privilege.
+### Phase 2: React Frontend Build & Cloud Distribution
 
----
+1. Build the frontend statically:
+   ```bash
+   cd frontend
+   npm install
+   # Set API endpoint to production ALB domain
+   VITE_API_URL=https://api.yourdomain.com/api npm run build
+   ```
+2. Sync build files to S3 Web Hosting Bucket:
+   ```bash
+   aws s3 sync dist/ s3://inferx-frontend-bucket/ --delete
+   ```
+3. Set up **Amazon CloudFront** distribution with the S3 bucket as its origin. Configure:
+   * **SSL Certificate** via AWS Certificate Manager (ACM).
+   * **Routing Rules**: Redirect HTTP requests to HTTPS, and route standard paths directly to `/index.html` (SPA fallback).
 
-## 📦 Kubernetes Workload Mapping
+### Phase 3: Containerizing & Registering Backend Images
 
-| Service | K8s Type | Notes |
-|---|---|---|
-| Backend | Deployment | CPU/GPU variants; connect to Redis/DB/MinIO |
-| Celery | Deployment | Scale independently; HPA on queue depth if possible |
-| Celery Beat | Deployment | Single replica |
-| Frontend | Deployment | Serve static build with Nginx in prod |
-| Streamlit | Deployment | Optional GPU for heavy inference |
-| Postgres | StatefulSet | Use PVC or managed DB (recommended) |
-| Redis | Deployment | Use managed Redis for production |
-| MinIO | StatefulSet | Use PVC or replace with S3/GCS |
-| Mailer | Deployment | Lightweight, stateless |
+1. Create registries in **Amazon Elastic Container Registry (ECR)**:
+   * `inferx-backend`
+   * `inferx-streamlit`
+2. Build and push backend images using AWS CLI:
+   ```bash
+   # Log in to ECR
+   aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com
 
----
+   # Build & push backend
+   docker build -t inferx-backend -f docker/Dockerfile.backend .
+   docker tag inferx-backend:latest <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/inferx-backend:latest
+   docker push <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/inferx-backend:latest
+   ```
 
-## 🔐 Configuration & Secrets
+### Phase 4: ECS Tasks & Deployments
 
-Required runtime envs (from `.env.example`):
+1. **Secrets Management**: Store API keys (`GEMINI_API_KEY`, `RAZORPAY_KEY_SECRET`, `GOOGLE_CLIENT_SECRET`, etc.) inside **AWS Secrets Manager**.
+2. **ECS Task Definitions**:Map database connections directly using RDS endpoint DNS:
+   `postgresql://<user>:<password>@<rds-endpoint>:5432/inferx_ml`
 
-- **Backend/Workers**: `DATABASE_URL`, `REDIS_URL`, `MINIO_*`, `JWT_SECRET_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MAILER_URL`, `RAZORPAY_*`
-- **Mailer**: `SMTP_*`
-- **Frontend**: `VITE_API_URL`
-- **Streamlit**: `API_URL`
+   Map S3 variables replacing MinIO endpoints:
 
-Store secrets in **Kubernetes Secrets** and mount as env vars. Use sealed-secrets or a vault (AWS Secrets Manager / HashiCorp Vault) in production.
 
----
+   * `S3_USE_AWS=true`
+   * `AWS_STORAGE_BUCKET_NAME=inferx-datasets-vault`
+   * Mount IAM Task Execution Roles directly to tasks so containers securely write to S3 without managing raw Access/Secret Keys inside environmental variables.
+3. **Setup Auto-Scaling for GPU workers**:
 
-## 📁 Storage Plan
-
-| Data | Recommended Storage |
-|---|---|
-| ML models & artifacts | MinIO (PVC) or S3-compatible storage |
-| Datasets | MinIO or object store |
-| Metadata & users | Managed PostgreSQL |
-| Task queues | Redis (managed) |
-
-**Migration to Cloud Object Storage** (optional):
-- Replace MinIO with S3/GCS + update env vars to point to gateway.
-
----
-
-## ⚖️ Scaling Strategy
-
-- **Backend**: scale by CPU/memory; HPA based on request latency & CPU.
-- **Celery**: scale by queue size; use `celery-exporter` or Redis metrics.
-- **Streamlit**: scale by active sessions.
-- **DB/Redis/MinIO**: scale vertically; prefer managed services.
+   * Set up Celery training container task scaling policies based on ElastiCache metrics (`UnreceivedMessages` queue length). When queue > `0`, spin up EC2 GPU instances; scale down to `0` when tasks finish.
 
 ---
 
-## 🚦 Networking & Routing
+## 🚀 CI/CD Pipeline (GitHub Actions Automation)
 
-| Endpoint | Route |
-|---|---|
-| React UI | `/` via UI Ingress |
-| Flask API | `/api/*` via API Ingress |
-| Streamlit | `/streamlit` or separate subdomain |
-| MinIO Console | restricted via VPN or admin-only Ingress |
+A production-grade CI/CD pipeline built with **GitHub Actions** automates code building, image containerization, static assets deployment, and container service rolling updates to AWS.
 
----
+### 🔑 Prerequisites & IAM Configuration
+1. Create a **GitHub Repository Secret** for AWS authentication:
+   * `AWS_ACCESS_KEY_ID`: Dedicated IAM deployment credentials.
+   * `AWS_SECRET_ACCESS_KEY`: Dedicated IAM deployment credentials.
+2. Ensure the deployment role has permissions for: `ecr:*`, `ecs:*`, `s3:*`, and `cloudfront:CreateInvalidation`.
 
-## 🧪 CI/CD Pipeline (Recommended)
+### 📂 GitHub Actions Workflow Configuration
+Create a file at `.github/workflows/deploy.yml` with the following configuration:
 
-1. **Build** images on push to `main`.
-2. **Run tests** (backend + unit tests).
-3. **Push** images to registry with git SHA tag.
-4. **Deploy** via Helm or Kustomize.
-5. **Post-deploy checks**: health endpoints, DB connectivity.
+```yaml
+name: Deploy InferX-ML to AWS Cloud-Native
 
----
+on:
+  push:
+    branches:
+      - main
 
-## 🚀 AWS CI/CD Options
+env:
+  AWS_REGION: us-east-1
+  ECR_BACKEND_REGISTRY: inferx-backend
+  ECS_CLUSTER: inferx-production-cluster
+  ECS_BACKEND_SERVICE: inferx-backend-service
+  ECS_BACKEND_TASK_DEFINITION: .aws/backend-task-def.json
+  S3_FRONTEND_BUCKET: inferx-frontend-bucket
+  CLOUDFRONT_DISTRIBUTION_ID: E2XXXXXXXXXXXX
 
-### Option A: GitHub Actions + ECR + EKS (Recommended)
+jobs:
+  # Job 1: Build & Deploy Frontend (React SPA)
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-1. **Build & Test**
-   - Run Python + Node tests.
-   - Build Docker images for `backend`, `celery`, `frontend`, `streamlit`, `mailer`.
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
-2. **Publish**
-   - Push images to **ECR** with Git SHA tag.
+      - name: Install & Build React Frontend
+        run: |
+          cd frontend
+          npm ci
+          VITE_API_URL=https://api.yourdomain.com/api npm run build
 
-3. **Deploy**
-   - `kubectl` / `helm upgrade` to EKS with new image tags.
-   - Use Kustomize or Helm for environment-specific values.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-4. **Post-Deploy Verification**
-   - Smoke test API endpoints.
-   - Verify migrations/health checks.
+      - name: Sync static files to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://${{ env.S3_FRONTEND_BUCKET }}/ --delete
 
-**Required AWS IAM Permissions** (for CI/CD):
-- `ecr:*` (scoped to repo), `eks:DescribeCluster`, `eks:UpdateClusterConfig`,
-  `sts:AssumeRole`, `secretsmanager:GetSecretValue`.
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ env.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
 
-### Option B: AWS CodePipeline + CodeBuild
+  # Job 2: Build, Push & Deploy Backend Container (Flask API)
+  deploy-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-1. Source: GitHub or CodeCommit
-2. Build: CodeBuild builds and pushes images to ECR
-3. Deploy: CodeDeploy or Helm via CodeBuild step
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
----
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
 
-## 📊 Observability
+      - name: Build, tag, and push Docker image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/${{ env.ECR_BACKEND_REGISTRY }}:$IMAGE_TAG -f docker/Dockerfile.backend .
+          docker push $ECR_REGISTRY/${{ env.ECR_BACKEND_REGISTRY }}:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/${{ env.ECR_BACKEND_REGISTRY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-- **Logging**: Fluent Bit → Loki/Elastic.
-- **Metrics**: Prometheus + Grafana.
-- **Tracing**: OpenTelemetry (optional).
-- **Health checks**: `liveness` + `readiness` for each service.
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_BACKEND_TASK_DEFINITION }}
+          container-name: backend
+          image: ${{ steps.build-image.outputs.image }}
 
----
-
-## 🛡️ Security Checklist
-
-- Use HTTPS everywhere (TLS).
-- Rotate API keys and SMTP credentials.
-- Set `JWT_SECRET_KEY` and `SECRET_KEY` to strong values.
-- Restrict admin endpoints and MinIO console.
-- Enable rate limiting (already supported in backend).
-
----
-
-## ✅ Minimal Production-Ready Stack (Recommended)
-
-- **Managed PostgreSQL** (RDS/CloudSQL)
-- **Managed Redis** (Elasticache/MemoryStore)
-- **S3/GCS** for object storage (replace MinIO)
-- **Kubernetes (EKS)** for API + workers + UI
-
----
-
-## 🗺️ Deployment Phases
-
-### Phase 1: Lift-and-Shift
-- Docker Compose → Kubernetes without refactor.
-- Use MinIO + in-cluster Postgres/Redis.
-
-### Phase 2: Managed Services
-- Migrate DB, Redis, storage to managed services.
-
-### Phase 3: Scale & Optimize
-- GPU node pool for ML training.
-- Horizontal scaling + auto-scaling policies.
-- Add observability and alerting.
-
----
-
-## 📌 Notes for GPU Support
-
-- Use GPU node pools and assign `NVIDIA_VISIBLE_DEVICES=all`.
-- Ensure CUDA base images (already supported in `docker-compose.gpu.yml`).
-- Install NVIDIA device plugin in K8s.
-
----
-
-## 🧾 AWS Deployment Checklist (Quick Start)
-
-- [ ] Create EKS cluster + managed node groups (CPU + optional GPU).
-- [ ] Create ECR repos for each service.
-- [ ] Provision RDS (Postgres) + ElastiCache (Redis).
-- [ ] Create S3 buckets for datasets/models/artifacts.
-- [ ] Configure Secrets Manager + IRSA.
-- [ ] Install ALB Ingress Controller.
-- [ ] Deploy Helm/Kustomize manifests.
-- [ ] Configure CloudWatch logs and alarms.
-
-## ✅ Deliverables Checklist
-
-- [ ] Container images built & pushed
-- [ ] K8s manifests or Helm chart created
-- [ ] Secrets stored securely
-- [ ] Ingress configured with TLS
-- [ ] Autoscaling enabled
-- [ ] Observability installed
-- [ ] Backups configured
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_BACKEND_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
 
 ---
 
-## 📎 Files Referenced
+## 📈 High Availability & Disaster Recovery (DR)
 
-- `docker-compose.yml` (service map)
-- `docker-compose.gpu.yml` (GPU overrides)
-- `docker/Dockerfile.*` (builds)
-- `.env.example` (environment variables)
-- `backend/app/config.py` (runtime defaults)
-
----
-
-## ✅ Next Suggested Improvements (Optional)
-
-- Convert Dockerfiles to multi-stage production builds (smaller images).
-- Add `helm/` chart for deployment consistency.
-- Add `k8s/` manifests for each service.
-- Add backups for PostgreSQL and object storage.
+* **Multi-AZ Availability**: ALB distributes traffic across 3 Availability Zones (AZs) seamlessly. RDS automatically shifts to a standby replica during a zone failure.
+* **Auto-Scaling**: ECS dynamically spins up additional task instances upon CPU utilization spikes (> 70%).
+* **Scheduled Backups**: Automated RDS snapshots taken daily with multi-region replication enabled for catastrophic recovery plans.
