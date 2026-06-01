@@ -598,7 +598,7 @@ export default function LandingPage() {
             </section>
 
             {/* ═══ DEVELOPED BY ═══ */}
-            <section className="team-section">
+            {/* <section className="team-section">
                 <FadeIn>
                     <div className="section-label">
                         <Code2 size={14} />
@@ -611,7 +611,7 @@ export default function LandingPage() {
                 <FadeIn delay={0.2}>
                     <AnimatedTestimonials testimonials={team} autoplay={false} />
                 </FadeIn>
-            </section>
+            </section> */}
 
             {/* ═══ FOOTER ═══ */}
             {/* ═══ FOOTER ═══ */}
