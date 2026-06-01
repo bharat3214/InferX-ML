@@ -6,7 +6,7 @@ import api from '../services/api'
 import {
     User, Lock, CreditCard, Crown, Shield, ChevronRight,
     Eye, EyeOff, Check, X, Zap, Sparkles, LogOut, Mail, Bell,
-    Download, Calendar, History, Wallet, Star
+    Download, Calendar, History, Wallet, Star, Pencil
 } from 'lucide-react'
 import './SettingsPage.css'
 
@@ -60,6 +60,11 @@ export default function SettingsPage() {
     const { user, logout, checkAuth } = useAuthStore()
     const { toast } = useToast()
     const navigate = useNavigate()
+
+    /* ── Username edit state ── */
+    const [editingUsername, setEditingUsername] = useState(false)
+    const [newUsername, setNewUsername] = useState(user?.username || '')
+    const [savingUsername, setSavingUsername] = useState(false)
 
     /* ── Password change state ── */
     const [currentPwd, setCurrentPwd] = useState('')
@@ -290,6 +295,31 @@ export default function SettingsPage() {
         }
     }
 
+    const handleSaveUsername = async () => {
+        const trimmed = newUsername.trim()
+        if (!trimmed || trimmed === user?.username) {
+            setEditingUsername(false)
+            setNewUsername(user?.username || '')
+            return
+        }
+        setSavingUsername(true)
+        try {
+            const res = await api.put('/auth/update-username', { username: trimmed })
+            // Update the user in zustand store
+            useAuthStore.setState({ user: res.data.user })
+            toast({ title: 'Success', description: 'Username updated.' })
+            setEditingUsername(false)
+        } catch (err) {
+            toast({
+                title: 'Error',
+                description: err.response?.data?.error || 'Failed to update username.',
+                variant: 'destructive'
+            })
+        } finally {
+            setSavingUsername(false)
+        }
+    }
+
     const handleLogout = () => { logout(); navigate('/login') }
 
     const isFree = !user?.plan_type || user.plan_type === 'free'
@@ -309,7 +339,48 @@ export default function SettingsPage() {
                 <div className="st-profile-fields">
                     <div className="st-field">
                         <label><User size={14} /> Username</label>
-                        <div className="st-field-value">{user?.username || '—'}</div>
+                        {editingUsername ? (
+                            <div className="st-field-edit">
+                                <input
+                                    className="st-field-input"
+                                    value={newUsername}
+                                    onChange={e => setNewUsername(e.target.value)}
+                                    placeholder="New username"
+                                    maxLength={32}
+                                    autoFocus
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') handleSaveUsername()
+                                        if (e.key === 'Escape') { setEditingUsername(false); setNewUsername(user?.username || '') }
+                                    }}
+                                />
+                                <button
+                                    className="st-btn-icon st-btn-save"
+                                    onClick={handleSaveUsername}
+                                    disabled={savingUsername}
+                                    title="Save"
+                                >
+                                    {savingUsername ? <span className="st-spinner" /> : <Check size={16} />}
+                                </button>
+                                <button
+                                    className="st-btn-icon st-btn-cancel"
+                                    onClick={() => { setEditingUsername(false); setNewUsername(user?.username || '') }}
+                                    title="Cancel"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="st-field-value st-field-editable">
+                                {user?.username || '—'}
+                                <button
+                                    className="st-btn-icon st-btn-edit"
+                                    onClick={() => { setNewUsername(user?.username || ''); setEditingUsername(true) }}
+                                    title="Edit username"
+                                >
+                                    <Pencil size={14} />
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <div className="st-field">
                         <label><Mail size={14} /> Email</label>

@@ -116,6 +116,58 @@
 
 .st-field-value { font-size: 0.92rem; color: rgba(255,255,255,.8); }
 
+/* Editable field (username) */
+.st-field-editable {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.st-btn-edit {
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s;
+}
+.st-field:hover .st-btn-edit {
+    opacity: 1;
+}
+
+.st-field-edit {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.st-field-input {
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    font-size: 0.88rem;
+    font-family: inherit;
+    outline: none;
+    width: 180px;
+    transition: border-color 0.2s;
+}
+.st-field-input:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+}
+
+.st-btn-save {
+    color: #10b981 !important;
+}
+.st-btn-save:hover {
+    background: rgba(16, 185, 129, 0.12) !important;
+}
+
+.st-btn-cancel {
+    color: #ef4444 !important;
+}
+.st-btn-cancel:hover {
+    background: rgba(239, 68, 68, 0.12) !important;
+}
+
 .st-plan-tag {
     display: inline-flex; align-items: center; gap: 0.3rem;
     padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600;

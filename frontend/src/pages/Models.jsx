@@ -23,7 +23,8 @@ import {
     Info,
     FlaskConical,
     CheckCircle,
-    ImageIcon
+    ImageIcon,
+    Search
 } from 'lucide-react'
 import { modelsApi } from '../services/api'
 import './Models.css'
@@ -377,6 +378,7 @@ export default function Models() {
     const [downloadingId, setDownloadingId] = useState(null)
     const [analysisModel, setAnalysisModel] = useState(null)
     const [currentPage, setCurrentPage] = useState(1)
+    const [searchTerm, setSearchTerm] = useState('')
 
     const MODELS_PER_PAGE = 12
 
@@ -385,12 +387,28 @@ export default function Models() {
         queryFn: () => modelsApi.list()
     })
 
-    const models = data?.data?.models || []
-    const totalPages = Math.max(1, Math.ceil(models.length / MODELS_PER_PAGE))
+    const rawModels = data?.data?.models || []
+
+    // 1. Sort models by created_at descending (latest first)
+    const sortedModels = useMemo(() => {
+        return [...rawModels].sort((a, b) => {
+            return new Date(b.created_at) - new Date(a.created_at)
+        })
+    }, [rawModels])
+
+    // 2. Filter models by search term (case-insensitive model name search)
+    const filteredModels = useMemo(() => {
+        if (!searchTerm.trim()) return sortedModels
+        const term = searchTerm.toLowerCase()
+        return sortedModels.filter(m => m.name && m.name.toLowerCase().includes(term))
+    }, [sortedModels, searchTerm])
+
+    const totalPages = Math.max(1, Math.ceil(filteredModels.length / MODELS_PER_PAGE))
+
     const paginatedModels = useMemo(() => {
         const start = (currentPage - 1) * MODELS_PER_PAGE
-        return models.slice(start, start + MODELS_PER_PAGE)
-    }, [models, currentPage])
+        return filteredModels.slice(start, start + MODELS_PER_PAGE)
+    }, [filteredModels, currentPage])
 
     useEffect(() => {
         if (currentPage > totalPages) {
@@ -453,24 +471,47 @@ export default function Models() {
                 </div>
             </div>
 
-            {/* Stats strip */}
-            {models.length > 0 && (
-                <div className="stats-strip">
-                    <div className="stat-chip">
-                        <Layers size={14} />
-                        <span><strong>{models.length}</strong> Models</span>
+            {/* Stats strip & Search Bar */}
+            {rawModels.length > 0 && (
+                <div className="models-toolbar">
+                    <div className="stats-strip">
+                        <div className="stat-chip">
+                            <Layers size={14} />
+                            <span><strong>{rawModels.length}</strong> Models</span>
+                        </div>
+                        <div className="stat-chip">
+                            <Trophy size={14} />
+                            <span>Best: <strong>
+                                {rawModels.length > 0 ? `${(Math.max(...rawModels.map(m => m.best_score || 0)) * 100).toFixed(1)}%` : '—'}
+                            </strong></span>
+                        </div>
+                        <div className="stat-chip">
+                            <Target size={14} />
+                            <span>Types: <strong>
+                                {[...new Set(rawModels.map(m => m.problem_type).filter(Boolean))].join(', ') || '—'}
+                            </strong></span>
+                        </div>
                     </div>
-                    <div className="stat-chip">
-                        <Trophy size={14} />
-                        <span>Best: <strong>
-                            {models.length > 0 ? `${(Math.max(...models.map(m => m.best_score || 0)) * 100).toFixed(1)}%` : '—'}
-                        </strong></span>
-                    </div>
-                    <div className="stat-chip">
-                        <Target size={14} />
-                        <span>Types: <strong>
-                            {[...new Set(models.map(m => m.problem_type).filter(Boolean))].join(', ') || '—'}
-                        </strong></span>
+
+                    <div className="models-search-bar">
+                        <div className="search-input-wrap">
+                            <Search size={16} className="search-icon" />
+                            <input
+                                type="text"
+                                placeholder="Search models by name..."
+                                value={searchTerm}
+                                onChange={(e) => {
+                                    setSearchTerm(e.target.value)
+                                    setCurrentPage(1)
+                                }}
+                                className="search-input"
+                            />
+                            {searchTerm && (
+                                <button className="clear-search-btn" onClick={() => setSearchTerm('')} title="Clear search">
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -481,200 +522,211 @@ export default function Models() {
                     <div className="spinner" />
                     <p>Loading models...</p>
                 </div>
-            ) : models.length > 0 ? (
-                <>
-                <div className="models-grid">
-                    {paginatedModels.map((model) => {
-                        const allResults = model.results?.all_models || []
-                        const chartData = allResults
-                            .sort((a, b) => b.score - a.score)
-                            .slice(0, 6)
-                            .map(m => ({
-                                label: m.model,
-                                value: Math.max(0, m.score * 100),
-                                best: m.model === model.best_model_name
-                            }))
+            ) : rawModels.length > 0 ? (
+                filteredModels.length > 0 ? (
+                    <>
+                    <div className="models-grid">
+                        {paginatedModels.map((model) => {
+                            const allResults = model.results?.all_models || []
+                            const chartData = allResults
+                                .sort((a, b) => b.score - a.score)
+                                .slice(0, 6)
+                                .map(m => ({
+                                    label: m.model,
+                                    value: Math.max(0, m.score * 100),
+                                    best: m.model === model.best_model_name
+                                }))
 
-                        return (
-                            <div key={model.id} className="model-card card">
-                                {/* Card top — badge + score ring */}
-                                <div className="model-card-top">
-                                    <div className="mc-left">
-                                        <span className={`problem-badge pb-${getProblemTypeColor(model.problem_type)}`}>
-                                            {model.problem_type?.replace('_', ' ') || 'unknown'}
-                                        </span>
-                                        <h3 className="model-name">{model.name}</h3>
+                            return (
+                                <div key={model.id} className="model-card card">
+                                    {/* Card top — badge + score ring */}
+                                    <div className="model-card-top">
+                                        <div className="mc-left">
+                                            <span className={`problem-badge pb-${getProblemTypeColor(model.problem_type)}`}>
+                                                {model.problem_type?.replace('_', ' ') || 'unknown'}
+                                            </span>
+                                            <h3 className="model-name">{model.name}</h3>
+                                        </div>
+                                        <div className="mc-right">
+                                            <ScoreRing score={model.best_score} size={68} />
+                                        </div>
                                     </div>
-                                    <div className="mc-right">
-                                        <ScoreRing score={model.best_score} size={68} />
+
+                                    {/* Quick stats */}
+                                    <div className="model-quick-stats">
+                                        <div className="qs-item">
+                                            <Trophy size={13} className="qs-icon" />
+                                            <span className="qs-label">Best</span>
+                                            <span className="qs-val">{model.best_model_name || '—'}</span>
+                                        </div>
+                                        <div className="qs-item">
+                                            <Target size={13} className="qs-icon" />
+                                            <span className="qs-label">Target</span>
+                                            <span className="qs-val mono">{model.target_column || '—'}</span>
+                                        </div>
+                                        <div className="qs-item">
+                                            <Clock size={13} className="qs-icon" />
+                                            <span className="qs-label">Trained</span>
+                                            <span className="qs-val">{new Date(model.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Mini chart preview */}
+                                    {chartData.length > 0 && (
+                                        <div className="mini-chart-preview">
+                                            <MiniBarChart data={chartData} height={50} />
+                                        </div>
+                                    )}
+
+                                    {/* Actions */}
+                                    <div style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px',
+                                        marginTop: 'auto',
+                                        paddingTop: '12px',
+                                        borderTop: '1px solid rgba(255,255,255,0.1)'
+                                    }}>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            <button
+                                                onClick={() => setAnalysisModel(model)}
+                                                style={{
+                                                    flex: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '6px',
+                                                    padding: '8px 12px',
+                                                    background: 'rgba(16,185,129,0.12)',
+                                                    border: '1px solid rgba(16,185,129,0.35)',
+                                                    borderRadius: '8px',
+                                                    color: '#6ee7b7',
+                                                    fontSize: '0.82rem',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <BarChart3 size={14} />
+                                                Analyze
+                                            </button>
+                                            <Link
+                                                to={`/predictions/${model.id}`}
+                                                style={{
+                                                    flex: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '6px',
+                                                    padding: '8px 12px',
+                                                    background: 'linear-gradient(135deg, #059669, #14b8a6)',
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    color: '#fff',
+                                                    fontSize: '0.82rem',
+                                                    fontWeight: 600,
+                                                    textDecoration: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <TrendingUp size={14} />
+                                                Predict
+                                            </Link>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            <button
+                                                onClick={() => handleDownload(model.id, model.name)}
+                                                disabled={downloadingId === model.id || !model.has_package}
+                                                title={!model.has_package ? 'Package not available' : 'Download model'}
+                                                style={{
+                                                    flex: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '6px',
+                                                    padding: '8px 12px',
+                                                    background: 'rgba(16,185,129,0.15)',
+                                                    border: '2px solid rgba(16,185,129,0.5)',
+                                                    borderRadius: '8px',
+                                                    color: '#6ee7b7',
+                                                    fontSize: '0.8rem',
+                                                    fontWeight: 600,
+                                                    cursor: (!model.has_package) ? 'not-allowed' : 'pointer',
+                                                    opacity: (!model.has_package) ? 0.4 : 1
+                                                }}
+                                            >
+                                                {downloadingId === model.id ? (
+                                                    <Loader2 size={14} className="spin" />
+                                                ) : (
+                                                    <Download size={14} />
+                                                )}
+                                                Download
+                                            </button>
+                                            <button
+                                                disabled={deleteMutation.isPending}
+                                                title="Delete Model"
+                                                onClick={() => {
+                                                    if (window.confirm('Delete this model?')) {
+                                                        deleteMutation.mutate(model.id)
+                                                    }
+                                                }}
+                                                style={{
+                                                    flex: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '6px',
+                                                    padding: '8px 12px',
+                                                    background: 'rgba(239,68,68,0.15)',
+                                                    border: '2px solid rgba(239,68,68,0.5)',
+                                                    borderRadius: '8px',
+                                                    color: '#fca5a5',
+                                                    fontSize: '0.8rem',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <Trash2 size={14} />
+                                                Delete
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
+                            )
+                        })}
+                    </div>
 
-                                {/* Quick stats */}
-                                <div className="model-quick-stats">
-                                    <div className="qs-item">
-                                        <Trophy size={13} className="qs-icon" />
-                                        <span className="qs-label">Best</span>
-                                        <span className="qs-val">{model.best_model_name || '—'}</span>
-                                    </div>
-                                    <div className="qs-item">
-                                        <Target size={13} className="qs-icon" />
-                                        <span className="qs-label">Target</span>
-                                        <span className="qs-val mono">{model.target_column || '—'}</span>
-                                    </div>
-                                    <div className="qs-item">
-                                        <Clock size={13} className="qs-icon" />
-                                        <span className="qs-label">Trained</span>
-                                        <span className="qs-val">{new Date(model.created_at).toLocaleDateString()}</span>
-                                    </div>
-                                </div>
-
-                                {/* Mini chart preview */}
-                                {chartData.length > 0 && (
-                                    <div className="mini-chart-preview">
-                                        <MiniBarChart data={chartData} height={50} />
-                                    </div>
-                                )}
-
-                                {/* Actions */}
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '8px',
-                                    marginTop: 'auto',
-                                    paddingTop: '12px',
-                                    borderTop: '1px solid rgba(255,255,255,0.1)'
-                                }}>
-                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                        <button
-                                            onClick={() => setAnalysisModel(model)}
-                                            style={{
-                                                flex: 1,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px',
-                                                padding: '8px 12px',
-                                                background: 'rgba(16,185,129,0.12)',
-                                                border: '1px solid rgba(16,185,129,0.35)',
-                                                borderRadius: '8px',
-                                                color: '#6ee7b7',
-                                                fontSize: '0.82rem',
-                                                fontWeight: 600,
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            <BarChart3 size={14} />
-                                            Analyze
-                                        </button>
-                                        <Link
-                                            to={`/predictions/${model.id}`}
-                                            style={{
-                                                flex: 1,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px',
-                                                padding: '8px 12px',
-                                                background: 'linear-gradient(135deg, #059669, #14b8a6)',
-                                                border: 'none',
-                                                borderRadius: '8px',
-                                                color: '#fff',
-                                                fontSize: '0.82rem',
-                                                fontWeight: 600,
-                                                textDecoration: 'none',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            <TrendingUp size={14} />
-                                            Predict
-                                        </Link>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                        <button
-                                            onClick={() => handleDownload(model.id, model.name)}
-                                            disabled={downloadingId === model.id || !model.has_package}
-                                            title={!model.has_package ? 'Package not available' : 'Download model'}
-                                            style={{
-                                                flex: 1,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px',
-                                                padding: '8px 12px',
-                                                background: 'rgba(16,185,129,0.15)',
-                                                border: '2px solid rgba(16,185,129,0.5)',
-                                                borderRadius: '8px',
-                                                color: '#6ee7b7',
-                                                fontSize: '0.8rem',
-                                                fontWeight: 600,
-                                                cursor: (!model.has_package) ? 'not-allowed' : 'pointer',
-                                                opacity: (!model.has_package) ? 0.4 : 1
-                                            }}
-                                        >
-                                            {downloadingId === model.id ? (
-                                                <Loader2 size={14} className="spin" />
-                                            ) : (
-                                                <Download size={14} />
-                                            )}
-                                            Download
-                                        </button>
-                                        <button
-                                            disabled={deleteMutation.isPending}
-                                            title="Delete Model"
-                                            onClick={() => {
-                                                if (window.confirm('Delete this model?')) {
-                                                    deleteMutation.mutate(model.id)
-                                                }
-                                            }}
-                                            style={{
-                                                flex: 1,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                gap: '6px',
-                                                padding: '8px 12px',
-                                                background: 'rgba(239,68,68,0.15)',
-                                                border: '2px solid rgba(239,68,68,0.5)',
-                                                borderRadius: '8px',
-                                                color: '#fca5a5',
-                                                fontSize: '0.8rem',
-                                                fontWeight: 600,
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            <Trash2 size={14} />
-                                            Delete
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
-
-                {totalPages > 1 && (
-                    <div className="models-pagination">
-                        <button
-                            className="btn btn-outline models-pagination-btn"
-                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                            disabled={currentPage === 1}
-                        >
-                            Previous
-                        </button>
-                        <span className="pagination-meta">
-                            Page {currentPage} of {totalPages}
-                        </span>
-                        <button
-                            className="btn btn-outline models-pagination-btn"
-                            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                            disabled={currentPage === totalPages}
-                        >
-                            Next
+                    {totalPages > 1 && (
+                        <div className="models-pagination">
+                            <button
+                                className="btn btn-outline models-pagination-btn"
+                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                            >
+                                Previous
+                            </button>
+                            <span className="pagination-meta">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                className="btn btn-outline models-pagination-btn"
+                                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
+                    </>
+                ) : (
+                    <div className="empty-state card">
+                        <Box size={48} className="empty-icon" />
+                        <h3>No matching models found</h3>
+                        <p>Try adjusting your search criteria to find what you're looking for.</p>
+                        <button className="btn btn-primary" onClick={() => setSearchTerm('')}>
+                            Clear Search Query
                         </button>
                     </div>
-                )}
-                </>
+                )
             ) : (
                 <div className="empty-state card">
                     <Box size={48} className="empty-icon" />

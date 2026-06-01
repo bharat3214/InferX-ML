@@ -366,9 +366,42 @@ def get_current_user():
     return jsonify({'user': user.to_dict()}), 200
 
 
+@auth_bp.route('/update-username', methods=['PUT'])
+@jwt_required()
+@limiter.limit("5 per minute")
+def update_username():
+    """Update the username for the currently authenticated user."""
+    current_user_id = int(get_jwt_identity())
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    data = request.get_json() or {}
+    new_username = (data.get('username') or '').strip()
+
+    if not new_username:
+        return jsonify({'error': 'Username is required'}), 400
+
+    if not USERNAME_PATTERN.match(new_username):
+        return jsonify({'error': 'Username must be 3-32 characters and use only letters, numbers, or underscores'}), 400
+
+    if new_username == user.username:
+        return jsonify({'user': user.to_dict()}), 200
+
+    existing = User.query.filter_by(username=new_username).first()
+    if existing:
+        return jsonify({'error': 'Username already taken'}), 409
+
+    user.username = new_username
+    db.session.commit()
+
+    return jsonify({'user': user.to_dict(), 'message': 'Username updated successfully'}), 200
+
+
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
     """Logout user (client should discard tokens)"""
     # In a production app, you'd want to blacklist the token
     return jsonify({'message': 'Logged out successfully'}), 200
+

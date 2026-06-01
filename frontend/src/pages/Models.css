@@ -69,11 +69,19 @@
     line-height: 1.65;
 }
 
-/* ── Stats Strip ── */
+/* ── Toolbar & Search ── */
+.models-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+    flex-wrap: wrap;
+}
+
 .stats-strip {
     display: flex;
     gap: var(--space-3);
-    margin-bottom: var(--space-6);
     flex-wrap: wrap;
 }
 
@@ -95,6 +103,86 @@
 
 .stat-chip strong {
     color: var(--color-gray-200);
+}
+
+.models-search-bar {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    max-width: 320px;
+}
+
+.search-input-wrap {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--color-gray-500);
+    pointer-events: none;
+    transition: color 0.2s ease;
+}
+
+.search-input {
+    width: 100%;
+    padding: 8px 36px 8px 36px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: var(--radius-xl);
+    color: #fff;
+    font-size: 0.85rem;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.25s ease;
+}
+
+.search-input::placeholder {
+    color: var(--color-gray-500);
+}
+
+.search-input:focus {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(16, 185, 129, 0.35);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.1);
+}
+
+.search-input:focus + .search-icon {
+    color: #6ee7b7;
+}
+
+.clear-search-btn {
+    position: absolute;
+    right: 10px;
+    background: transparent;
+    border: none;
+    color: var(--color-gray-500);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    transition: all 0.2s ease;
+}
+
+.clear-search-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 768px) {
+    .models-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .models-search-bar {
+        max-width: none;
+    }
 }
 
 /* ── Models Grid ── */
