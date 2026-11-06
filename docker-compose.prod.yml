@@ -142,12 +142,11 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: docker/Dockerfile.frontend
+      dockerfile: docker/Dockerfile.frontend.prod
+      args:
+        VITE_API_URL: /api
     container_name: inferx-frontend
     restart: unless-stopped
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     depends_on:
       - backend
 

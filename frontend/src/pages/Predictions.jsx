@@ -11,26 +11,10 @@ import {
 import { modelsApi } from '../services/api'
 import './Predictions.css'
 
-// Streamlit is served on its own HTTPS subdomain via Caddy, so the iframe
-// stays same-protocol (no mixed content). Override with VITE_STREAMLIT_URL.
-function resolveStreamlitUrl() {
-    if (import.meta.env.VITE_STREAMLIT_URL) {
-        return import.meta.env.VITE_STREAMLIT_URL
-    }
-
-    const { hostname, protocol } = window.location
-
-    // Local development: Streamlit is exposed directly
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return 'http://localhost:8501'
-    }
-
-    // Production: app.<domain> or <domain>  ->  ml.<domain>
-    const baseDomain = hostname.replace(/^app\./, '')
-    return `${protocol}//ml.${baseDomain}`
-}
-
-const STREAMLIT_URL = resolveStreamlitUrl()
+// Streamlit URL - runs on port 8501
+const STREAMLIT_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:8501'
+    : `http://${window.location.hostname}:8501`
 
 export default function Predictions() {
     const { modelId } = useParams()

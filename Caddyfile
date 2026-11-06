@@ -7,9 +7,9 @@
 		reverse_proxy backend:5000
 	}
 
-	# Everything else -> React (Vite dev server)
+	# Everything else -> React static build (nginx)
 	handle {
-		reverse_proxy frontend:3000
+		reverse_proxy frontend:80
 	}
 
 	header {
@@ -19,16 +19,8 @@
 	}
 }
 
-# Streamlit on its own subdomain
+# Optional: Streamlit on its own subdomain
 {$ML_DOMAIN} {
 	encode gzip zstd
-
 	reverse_proxy streamlit:8501
-
-	# Must live in the same origin as the parent page (app subdomain)
-	# and must NOT inherit the app's restrictive X-Frame-Options.
-	header {
-		-X-Frame-Options
-		Content-Security-Policy "frame-ancestors https://{$APP_DOMAIN} https://{$ML_DOMAIN}"
-	}
 }
