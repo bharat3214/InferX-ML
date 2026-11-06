@@ -11,10 +11,9 @@ import {
 import { modelsApi } from '../services/api'
 import './Predictions.css'
 
-// Streamlit URL - runs on port 8501
-const STREAMLIT_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:8501'
-    : `http://${window.location.hostname}:8501`
+// Streamlit is reverse-proxied under /ml/ on the same origin so it stays HTTPS
+// (an http:// iframe on a https:// page is blocked as mixed content).
+const STREAMLIT_URL = import.meta.env.VITE_STREAMLIT_URL || '/ml/'
 
 export default function Predictions() {
     const { modelId } = useParams()

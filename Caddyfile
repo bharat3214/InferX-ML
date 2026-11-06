@@ -1,10 +1,15 @@
-# Main app: React UI + Flask API on the same origin
+# Main app: React UI + Flask API + Streamlit on the same origin
 {$APP_DOMAIN} {
 	encode gzip zstd
 
 	# API -> Flask
 	handle /api/* {
 		reverse_proxy backend:5000
+	}
+
+	# Streamlit (baseUrlPath=/ml) -> prediction UI, same origin so it can be framed
+	handle /ml/* {
+		reverse_proxy streamlit:8501
 	}
 
 	# Everything else -> React static build (nginx)
@@ -15,12 +20,10 @@
 	header {
 		Strict-Transport-Security "max-age=31536000;"
 		X-Content-Type-Options "nosniff"
-		X-Frame-Options "SAMEORIGIN"
 	}
 }
 
-# Optional: Streamlit on its own subdomain
+# Old subdomain: send visitors to the new same-origin path
 {$ML_DOMAIN} {
-	encode gzip zstd
-	reverse_proxy streamlit:8501
+	redir https://{$APP_DOMAIN}/ml/ permanent
 }
