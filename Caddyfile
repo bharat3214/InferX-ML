@@ -1,0 +1,26 @@
+# Main app: React UI + Flask API on the same origin
+{$APP_DOMAIN} {
+	encode gzip zstd
+
+	# API -> Flask
+	handle /api/* {
+		reverse_proxy backend:5000
+	}
+
+	# Everything else -> React (Vite dev server)
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000;"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+	}
+}
+
+# Optional: Streamlit on its own subdomain
+{$ML_DOMAIN} {
+	encode gzip zstd
+	reverse_proxy streamlit:8501
+}
