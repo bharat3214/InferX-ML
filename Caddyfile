@@ -19,8 +19,16 @@
 	}
 }
 
-# Optional: Streamlit on its own subdomain
+# Streamlit on its own subdomain
 {$ML_DOMAIN} {
 	encode gzip zstd
+
 	reverse_proxy streamlit:8501
+
+	# Must live in the same origin as the parent page (app subdomain)
+	# and must NOT inherit the app's restrictive X-Frame-Options.
+	header {
+		-X-Frame-Options
+		Content-Security-Policy "frame-ancestors https://{$APP_DOMAIN} https://{$ML_DOMAIN}"
+	}
 }

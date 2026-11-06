@@ -36,4 +36,13 @@ COPY streamlit_app/ .
 EXPOSE 8501
 
 # Run Streamlit
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# CORS/XSRF disabled so the app can be embedded in an iframe from the
+# main app domain. Safe here because Streamlit is never exposed publicly
+# without going through Caddy on the ML subdomain.
+CMD ["streamlit", "run", "app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.enableCORS=false", \
+     "--server.enableXsrfProtection=false", \
+     "--browser.serverAddress=ml.inferx.qzz.io", \
+     "--browser.serverPort=443"]

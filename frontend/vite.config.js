@@ -7,6 +7,14 @@ export default defineConfig({
     server: {
         host: '0.0.0.0',
         port: 3000,
+        // Allow requests proxied through Caddy with the public domain
+        allowedHosts: [
+            'inferx.qzz.io',
+            'app.inferx.qzz.io',
+            'ml.inferx.qzz.io',
+            'localhost',
+            '127.0.0.1'
+        ],
         watch: {
             usePolling: true,
             interval: 1000

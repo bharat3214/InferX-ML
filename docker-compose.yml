@@ -33,9 +33,10 @@ services:
 
   # MinIO Object Storage
   minio:
-    image: minio/minio:latest
+    image: bitnamilegacy/minio:latest
     container_name: inferx-minio
-    command: server /data --console-address ":9001"
+    user: root
+    command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
