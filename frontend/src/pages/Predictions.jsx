@@ -202,6 +202,7 @@ export default function Predictions() {
                     </div>
                 )}
                 <iframe
+                    key={selectedModel}
                     src={`${STREAMLIT_URL}?model=${selectedModel}`}
                     title="Streamlit Predictions"
                     width="100%"
